@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="Изображение товара">
+  <rect width="1200" height="900" fill="#000"/>
+  <rect x="78" y="78" width="1044" height="744" fill="#fff"/>
+  <path d="M190 614c150-210 284-272 402-187 58 42 115 50 171 23 93-46 176-4 249 126" fill="none" stroke="#000" stroke-width="42" stroke-linecap="round"/>
+  <circle cx="815" cy="280" r="74" fill="#ffdd00"/>
+  <text x="600" y="733" text-anchor="middle" font-family="Arial, sans-serif" font-size="58" font-weight="900" fill="#000">ШАШЛЫК ЛАЙК</text>
+</svg>

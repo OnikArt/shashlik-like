@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /order/
+Disallow: /checkout
+Disallow: /cart
+
+Sitemap: https://shashlik-like.ru/sitemap.xml

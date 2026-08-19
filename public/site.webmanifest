@@ -1,0 +1,19 @@
+{
+  "name": "Шашлык Лайк",
+  "short_name": "Шашлык Лайк",
+  "description": "Шашлык, шаурма и блюда на углях с доставкой по Воронежу.",
+  "lang": "ru",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#0d0e0d",
+  "theme_color": "#ffdd00",
+  "icons": [
+    {
+      "src": "/assets/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+﻿node_modules/
+dist/
+server/data/store.json
+.env
+.env.*
+.next
+!.env.example
+*.local
+*.tsbuildinfo
+*.log
+coverage/
