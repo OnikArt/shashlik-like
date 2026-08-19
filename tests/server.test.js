@@ -26,6 +26,15 @@ test("health endpoint confirms that the service and store are available", async 
   assert.equal(body.status, "ok");
 });
 
+test("API preflight allows the configured frontend and rejects unknown origins", async () => {
+  const allowed = await fetch(baseUrl + "/api/bootstrap", { method: "OPTIONS", headers: { origin: "http://localhost:5173" } });
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.get("access-control-allow-origin"), "http://localhost:5173");
+
+  const rejected = await fetch(baseUrl + "/api/bootstrap", { method: "OPTIONS", headers: { origin: "https://unknown.example" } });
+  assert.equal(rejected.status, 403);
+});
+
 test("public catalog exposes explicit addon assignments", async () => {
   const { response, body } = await request("/api/bootstrap");
   assert.equal(response.status, 200);

@@ -31,6 +31,19 @@ const dataDir = path.dirname(storePath);
 const port = Number(process.env.PORT || 4174);
 const tokenSecret = process.env.ADMIN_TOKEN_SECRET || "local-shashlik-like-secret";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin";
+const corsOriginPatterns = String(process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173,http://localhost:4175")
+  .split(",")
+  .map((value) => value.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return false;
+  return corsOriginPatterns.some((pattern) => {
+    if (!pattern.includes("*")) return origin === pattern;
+    const expression = pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^./]+");
+    return new RegExp(`^${expression}$`).test(origin);
+  });
+}
 
 if (process.env.NODE_ENV === "production") {
   if (!process.env.ADMIN_TOKEN_SECRET || process.env.ADMIN_TOKEN_SECRET.length < 32) {
@@ -1777,6 +1790,23 @@ async function staticFile(req, res, url) {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
+    const requestOrigin = String(req.headers.origin || "").replace(/\/$/, "");
+    if (url.pathname.startsWith("/api/") && requestOrigin && isAllowedCorsOrigin(requestOrigin)) {
+      res.setHeader("access-control-allow-origin", requestOrigin);
+      res.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
+      res.setHeader("access-control-allow-headers", "authorization, content-type");
+      res.setHeader("access-control-max-age", "86400");
+      res.setHeader("vary", "Origin");
+    }
+    if (req.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
+      if (!requestOrigin || !isAllowedCorsOrigin(requestOrigin)) {
+        send(res, 403, { error: "Origin is not allowed" });
+        return;
+      }
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     const canonicalOrigin = String(process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
     if (process.env.NODE_ENV === "production" && canonicalOrigin) {
       const canonical = new URL(canonicalOrigin);

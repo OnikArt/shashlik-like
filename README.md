@@ -27,6 +27,8 @@ npm.cmd start
 
 Полная пошаговая инструкция для первого запуска в Railway, подключения GitHub, Volume, Telegram, домена, HTTPS, аналитики и резервных копий находится в [DEPLOYMENT.md](./DEPLOYMENT.md).
 
+Для схемы **Vercel frontend + Railway API** используйте отдельную инструкцию [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md). На Vercel требуется `VITE_API_URL`; секреты и JSON-база остаются только на backend-хостинге.
+
 ## Environment
 
 | Переменная | Назначение |

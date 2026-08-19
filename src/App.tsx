@@ -1,5 +1,6 @@
 import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { apiFetch, apiUrl } from "./api";
 
 type Category = { id: string; name: string; minPrice: string; sortOrder: number };
 type Addon = { id: string; name: string; price: number; isActive: boolean; group: string };
@@ -196,9 +197,9 @@ function analyticsSessionId() {
 function trackEvent(name: string, data: Record<string, string | number> = {}) {
   const body = JSON.stringify({ name, data, sessionId: analyticsSessionId(), pathname: window.location.pathname, attribution: captureAttribution() });
   if (navigator.sendBeacon) {
-    navigator.sendBeacon("/api/analytics", new Blob([body], { type: "application/json" }));
+    navigator.sendBeacon(apiUrl("/api/analytics"), new Blob([body], { type: "application/json" }));
   } else {
-    void fetch("/api/analytics", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => undefined);
+    void apiFetch("/api/analytics", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => undefined);
   }
 }
 
@@ -231,14 +232,23 @@ function useBootstrap() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/bootstrap")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Ошибка API"))))
-      .then(setData)
-      .catch(() => setError("Не удалось загрузить меню. Попробуйте обновить страницу."));
-  }, []);
+  async function reload() {
+    setError("");
+    try {
+      const response = await apiFetch("/api/bootstrap", { headers: { accept: "application/json" } });
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok || !contentType.includes("application/json")) throw new Error("API unavailable");
+      const payload = await response.json() as Bootstrap;
+      if (!Array.isArray(payload.products) || !Array.isArray(payload.categories) || !payload.settings) throw new Error("Invalid API response");
+      setData(payload);
+    } catch {
+      setError("Не удалось подключиться к серверу меню. Проверьте соединение и повторите.");
+    }
+  }
 
-  return { data, error, reload: () => fetch("/api/bootstrap").then((res) => res.json()).then(setData) };
+  useEffect(() => { void reload(); }, []);
+
+  return { data, error, reload };
 }
 
 function useActiveOrder() {
@@ -254,7 +264,7 @@ function useActiveOrder() {
         return;
       }
       try {
-        const response = await fetch(`/api/orders/track/${encodeURIComponent(token)}`, { cache: "no-store" });
+        const response = await apiFetch(`/api/orders/track/${encodeURIComponent(token)}`, { cache: "no-store" });
         if (response.status === 404) {
           clearActiveOrderToken(token);
           if (active) setOrder(null);
@@ -289,7 +299,12 @@ function useActiveOrder() {
 function useCart(data: Bootstrap | null) {
   const [items, setItems] = useState<CartItem[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem("shashlik-cart") || "[]");
+      const stored = JSON.parse(localStorage.getItem("shashlik-cart") || "[]") as unknown;
+      if (!Array.isArray(stored)) return [];
+      return stored.filter((item): item is CartItem => Boolean(
+        item && typeof item === "object" && typeof item.productId === "string" &&
+        typeof item.quantity === "number" && item.quantity > 0 && Array.isArray(item.addons)
+      ));
     } catch {
       return [];
     }
@@ -387,7 +402,7 @@ function App() {
     window.setTimeout(() => setToast(""), 2400);
   };
 
-  if (error) return <SystemState title="Ошибка" text={error} />;
+  if (error) return <SystemState title="Ошибка" text={error} actionLabel="Повторить" onAction={() => void reload()} />;
   if (!data) return <SystemState title="ШАШЛЫК ЛАЙК" text="Загружаем меню..." />;
 
   return (
@@ -434,7 +449,11 @@ function useRouteMetadata(pathname: string) {
       "/about": ["О Шашлык Лайк", "Как мы готовим мясо и блюда на углях в Шашлык Лайк."],
       "/contacts": ["Контакты | Шашлык Лайк", "Телефон, время работы и способы связи с Шашлык Лайк в Воронеже."]
     };
-    const [title, description] = metadata[pathname] || (privateRoute
+    const privateMetadata: Record<string, [string, string]> = {
+      "/cart": ["Корзина | Шашлык Лайк", "Корзина заказа Шашлык Лайк."],
+      "/checkout": ["Оформление заказа | Шашлык Лайк", "Оформление заказа в Шашлык Лайк."]
+    };
+    const [title, description] = metadata[pathname] || privateMetadata[pathname] || (privateRoute
       ? [pathname.startsWith("/admin") ? "Админ-панель | Шашлык Лайк" : "Статус заказа | Шашлык Лайк", "Служебная страница Шашлык Лайк."]
       : ["Страница не найдена | Шашлык Лайк", "Запрошенная страница не найдена."]);
     document.title = title;
@@ -971,7 +990,7 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
     if (!form.address.trim()) return false;
     setAddressState({ status: "checking", message: "Проверяем адрес..." });
     try {
-      const response = await fetch("/api/address/validate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: form.address }) });
+      const response = await apiFetch("/api/address/validate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: form.address }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         setAddressState({ status: "invalid", message: payload.error || "Не удалось проверить адрес" });
@@ -1002,7 +1021,7 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
       items: cart.items
     };
     try {
-      const response = await fetch("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await apiFetch("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = json.error || "Не удалось отправить заказ. Попробуйте ещё раз или свяжитесь с нами в Telegram.";
@@ -1161,7 +1180,7 @@ function OrderTracking() {
     trackEvent("order_tracking_opened");
     const load = async (initial = false) => {
       try {
-        const response = await fetch(`/api/orders/track/${encodeURIComponent(trackingToken)}`, { cache: "no-store" });
+        const response = await apiFetch(`/api/orders/track/${encodeURIComponent(trackingToken)}`, { cache: "no-store" });
         if (response.status === 404) {
           if (active) setState("not-found");
           return;
@@ -1381,16 +1400,25 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
   const [error, setError] = useState("");
   const [admin, setAdmin] = useState<AdminBootstrap | null>(null);
   const [tab, setTab] = useState("dashboard");
+  const [busy, setBusy] = useState(false);
 
   async function load(nextToken = token) {
-    const response = await fetch("/api/admin/bootstrap", { headers: { authorization: `Bearer ${nextToken}` } });
-    if (!response.ok) {
-      setToken("");
-      setAdmin(null);
-      localStorage.removeItem("admin-token");
-      return;
+    try {
+      const response = await apiFetch("/api/admin/bootstrap", { headers: { authorization: `Bearer ${nextToken}` } });
+      if (response.status === 401 || response.status === 403) {
+        setToken("");
+        setAdmin(null);
+        localStorage.removeItem("admin-token");
+        setError("Сессия завершена. Войдите снова.");
+        return false;
+      }
+      if (!response.ok) throw new Error("Admin API unavailable");
+      setAdmin(await response.json());
+      return true;
+    } catch {
+      setError("Нет связи с сервером админки. Проверьте API и повторите.");
+      return false;
     }
-    setAdmin(await response.json());
   }
 
   useEffect(() => {
@@ -1399,33 +1427,45 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
 
   async function login(event: FormEvent) {
     event.preventDefault();
-    const response = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ login: loginName, password })
-    });
-    const json = await response.json();
-    if (!response.ok) {
-      setError(json.error || "Не удалось войти");
-      return;
-    }
-    localStorage.setItem("admin-token", json.token);
-    setToken(json.token);
+    if (busy) return;
+    setBusy(true);
     setError("");
-    await load(json.token);
+    try {
+      const response = await apiFetch("/api/admin/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ login: loginName, password })
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(json.error || "Не удалось войти");
+        return;
+      }
+      localStorage.setItem("admin-token", json.token);
+      setToken(json.token);
+      await load(json.token);
+    } catch {
+      setError("Нет связи с сервером. Проверьте адрес API и CORS.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function authorized(url: string, init: RequestInit = {}) {
     setError("");
-    const response = await fetch(url, { ...init, headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...(init.headers || {}) } });
-    if (!response.ok) {
-      const json = await response.json().catch(() => ({}));
-      setError(json.error || "Не удалось сохранить изменения");
+    try {
+      const response = await apiFetch(url, { ...init, headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...(init.headers || {}) } });
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        setError(json.error || "Не удалось сохранить изменения");
+        await load();
+        return;
+      }
       await load();
-      return;
+      onChanged();
+    } catch {
+      setError("Изменения не сохранены: нет связи с сервером.");
     }
-    await load();
-    onChanged();
   }
 
   function logout() {
@@ -1454,7 +1494,7 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
             <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Пароль" />
           </label>
           {error && <p className="form-error">{error}</p>}
-          <button className="button primary">Войти</button>
+          <button className="button primary" disabled={busy} aria-busy={busy}>{busy ? "Входим..." : "Войти"}</button>
         </form>
       </section>
     );
@@ -2002,14 +2042,12 @@ function EmptyProducts() {
   );
 }
 
-function SystemState({ title, text }: { title: string; text: string }) {
+function SystemState({ title, text, actionLabel, onAction }: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
   return (
     <main className="system-state">
       <h1>{title}</h1>
       <p>{text}</p>
-      <Link className="button primary" to="/">
-        На главную
-      </Link>
+      {onAction ? <button className="button primary" type="button" onClick={onAction}>{actionLabel || "Повторить"}</button> : <Link className="button primary" to="/">На главную</Link>}
     </main>
   );
 }
