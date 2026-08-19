@@ -1340,11 +1340,15 @@ function sanitizeProduct(input, fallback = {}) {
 }
 
 async function api(req, res, url) {
-  const store = await readStore();
-
   if (req.method === "GET" && url.pathname === "/api/health") {
-    return send(res, 200, { status: "ok", service: "shashlik-like" });
+    return send(res, 200, {
+      status: "ok",
+      service: "shashlik-like",
+      uptime: Math.round(process.uptime())
+    });
   }
+
+  const store = await readStore();
 
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
     return send(res, 200, publicStore(store));
@@ -1836,8 +1840,8 @@ createServer(async (req, res) => {
   } catch (error) {
     send(res, 500, { error: error.message || "Internal server error" });
   }
-}).listen(port, () => {
-  console.log(`Shashlik Like API listening on http://localhost:${port}`);
+}).listen(port, "0.0.0.0", () => {
+  console.log(`Shashlik Like API listening on http://0.0.0.0:${port}`);
   void pollTelegram();
   setInterval(() => void pollTelegram(), 5000).unref();
 });
