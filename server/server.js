@@ -125,7 +125,51 @@ function serializeUser(user) {
   };
 }
 
+const confirmedPickupPoints = [
+  {
+    id: "pobedy-48a",
+    name: "ШашлычОК",
+    address: "Бульвар Победы, 48А",
+    phone: "+7 995 669-12-42",
+    hours: "Круглосуточно",
+    mapUrl: "",
+    comment: "на кольце «Бульвара Победы»",
+    isActive: true
+  },
+  {
+    id: "moskovskiy-114",
+    name: "Шашлык Лайк",
+    address: "Московский проспект, 114",
+    phone: "+7 995 669-12-42",
+    hours: "09:00–22:00",
+    mapUrl: "",
+    comment: "рядом с ТЦ «Москва»",
+    isActive: true
+  },
+  {
+    id: "9-yanvarya-300a",
+    name: "Шашлык Лайк",
+    address: "улица 9 Января, 300А",
+    phone: "+7 995 669-12-42",
+    hours: "09:00–22:00",
+    mapUrl: "",
+    comment: "",
+    isActive: true
+  },
+  {
+    id: "peshe-streletskaya-163v",
+    name: "Шашлык Лайк",
+    address: "Пеше-Стрелецкая улица, 163В",
+    phone: "+7 995 669-12-42",
+    hours: "09:00–22:00",
+    mapUrl: "",
+    comment: "",
+    isActive: true
+  }
+];
+
 const seedStore = {
+  schemaVersion: 2,
   categories: [
     { id: "shashlik", name: "Шашлыки", minPrice: "От 120 ₽ / 100 г", sortOrder: 1 },
     { id: "shawarma", name: "Шаурма", minPrice: "От 240 ₽", sortOrder: 2 },
@@ -481,7 +525,7 @@ const seedStore = {
   orders: [],
   orderStatusHistory: [],
   analyticsEvents: [],
-  pickupPoints: [],
+  pickupPoints: confirmedPickupPoints,
   settings: {
     brand: "Шашлык Лайк",
     phone: "+7 995 669-12-42",
@@ -538,6 +582,13 @@ async function readStore() {
     }
   }
   let changed = false;
+  if (Number(store.schemaVersion || 0) < 2) {
+    if (!Array.isArray(store.pickupPoints) || !store.pickupPoints.length) {
+      store.pickupPoints = confirmedPickupPoints.map((point) => ({ ...point }));
+    }
+    store.schemaVersion = 2;
+    changed = true;
+  }
   if (!Array.isArray(store.users) || !store.users.length) {
     store.users = [createOwnerUser()];
     changed = true;
