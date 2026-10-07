@@ -1,6 +1,6 @@
 import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowRight, Bike, ChevronDown, ChevronLeft, ChevronRight, Clock3, Flame, Grid2X2, Heart, Leaf, List, MapPin, Menu as MenuIcon, MessageCircle, Phone, Plus, Search, Send, ShoppingBag, SlidersHorizontal, Store, Target, X } from "lucide-react";
+import { ArrowRight, Beef, Bike, ChefHat, ChevronDown, ChevronLeft, ChevronRight, Clock3, Flame, Grid2X2, Heart, Leaf, List, MapPin, Menu as MenuIcon, MessageCircle, Phone, Plus, Search, Send, ShoppingBag, SlidersHorizontal, Store, Target, Users, X } from "lucide-react";
 import { apiFetch, apiUrl } from "./api";
 
 type Category = { id: string; name: string; minPrice: string; sortOrder: number };
@@ -382,7 +382,7 @@ function App() {
   const activeTheme = themeMode === "auto" ? currentShiftTheme() : themeMode;
   const isAdmin = location.pathname.startsWith("/admin");
   const isHome = location.pathname === "/";
-  const usesHomeDesign = isHome || location.pathname === "/menu" || location.pathname === "/delivery" || location.pathname === "/pickup";
+  const usesHomeDesign = isHome || location.pathname === "/menu" || location.pathname === "/delivery" || location.pathname === "/pickup" || location.pathname === "/about" || location.pathname === "/contacts";
   const activeOrder = useActiveOrder();
 
   useRouteMetadata(location.pathname);
@@ -418,8 +418,8 @@ function App() {
           <Route path="/menu" element={<Menu data={data} onAdd={addToCart} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
           <Route path="/delivery" element={<Delivery data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
           <Route path="/pickup" element={<Navigate to="/delivery#kiosks" replace />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/contacts" element={<Contacts settings={data.settings} />} />
+          <Route path="/about" element={<About settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
+          <Route path="/contacts" element={<Contacts data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
           <Route path="/cart" element={<CartPage data={data} cart={cart} />} />
           <Route path="/checkout" element={<Checkout data={data} cart={cart} />} />
           <Route path="/order-success" element={<Success settings={data.settings} />} />
@@ -710,9 +710,9 @@ function Home({ data, onAdd, cartCount, cartTotal, onCartOpen }: HomeProps) {
           <section className="home-contact">
             <div className="home-contact-media"><img src="/assets/home-kiosk-evening.webp" alt="Киоск Шашлык Лайк вечером" width="1792" height="1024" loading="lazy" decoding="async" /></div>
             <div className="home-contact-copy"><span>Всегда рядом с вами</span><h2>Контакты</h2><div className="home-contact-list">
-              {[homePrimaryPhone, data.settings.phone].map((phone) => <a key={phone} href={phoneHref(phone)}><Phone /><strong>{phone}</strong></a>)}
-              <a href={`https://t.me/${data.settings.telegramBrand.replace("@", "")}`} target="_blank" rel="noreferrer"><Send /><strong>{data.settings.telegramBrand}</strong></a>
-              <a href={`https://t.me/${data.settings.telegramOrders.replace("@", "")}`} target="_blank" rel="noreferrer"><MessageCircle /><strong>{data.settings.telegramOrders}</strong></a>
+              {[homePrimaryPhone, formatRussianPhone(data.settings.phone)].map((phone) => <a key={phone} href={phoneHref(phone)}><Phone /><strong>{phone}</strong></a>)}
+              <a href={`https://t.me/${data.settings.telegramBrand.replace("@", "")}`} target="_blank" rel="noreferrer"><Send /><strong>{data.settings.telegramBrand.toLowerCase()}</strong></a>
+              <a href={`https://t.me/${data.settings.telegramOrders.replace("@", "")}`} target="_blank" rel="noreferrer"><MessageCircle /><strong>{data.settings.telegramOrders.toLowerCase()}</strong></a>
             </div></div>
           </section>
         </div>
@@ -728,6 +728,7 @@ function HomeBenefit({ icon, title, text }: { icon: ReactNode; title: string; te
 
 function HomeHeader({ settings, cartCount, cartTotal, onCartOpen, activePath }: { settings: Settings; cartCount: number; cartTotal: number; onCartOpen: () => void; activePath?: string }) {
   const [open, setOpen] = useState(false);
+  const secondaryPhone = formatRussianPhone(settings.phone);
   const navigation = [["Меню", "/menu"], ["Акции", "#promotions"], ["Доставка", "/delivery"], ["О нас", "/about"], ["Контакты", "/contacts"]];
   return (
     <header className="home-header">
@@ -735,11 +736,11 @@ function HomeHeader({ settings, cartCount, cartTotal, onCartOpen, activePath }: 
         <Link className="home-brand" to="/" aria-label="Шашлык Лайк и ШашлычОК, главная"><span className="home-brand-mark"><Flame /></span><span><strong>ШАШЛЫК <i>ЛАЙК</i> <b>×</b> ШАШЛЫЧ<i>ОК</i></strong><small>Воронеж · настоящий вкус на углях</small></span></Link>
         <nav className={open ? "home-nav open" : "home-nav"} aria-label="Навигация по сайту">
           {navigation.map(([label, href]) => href.startsWith("#") ? <a key={href} href={activePath ? `/${href}` : href} onClick={() => setOpen(false)}>{label}</a> : <Link className={activePath === href ? "active" : ""} key={href} to={href} onClick={() => setOpen(false)}>{label}</Link>)}
-          <div className="home-nav-mobile-phones"><a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a><a href={phoneHref(settings.phone)}>{settings.phone}</a></div>
+          <div className="home-nav-mobile-phones"><a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a><a href={phoneHref(secondaryPhone)}>{secondaryPhone}</a></div>
         </nav>
         <div className="home-header-actions">
           <a className="home-phone" href={phoneHref(homePrimaryPhone)}><Phone /> <span>{homePrimaryPhone}</span></a>
-          <a className="home-phone secondary" href={phoneHref(settings.phone)}><Phone /> <span>{settings.phone}</span></a>
+          <a className="home-phone secondary" href={phoneHref(secondaryPhone)}><Phone /> <span>{secondaryPhone}</span></a>
           <button className="home-cart-button" onClick={onCartOpen} aria-label={`Открыть корзину, товаров ${cartCount}`}><ShoppingBag />{cartCount > 0 && <b>{cartCount}</b>}<span>{cartTotal > 0 ? money(cartTotal) : "Корзина"}</span></button>
           <button className="home-menu-button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={open ? "Закрыть меню" : "Открыть меню"}>{open ? <X /> : <MenuIcon />}</button>
         </div>
@@ -763,8 +764,11 @@ function HomeProductCard({ product, onAdd }: { product: Product; onAdd: HomeProp
 }
 
 function HomeFooter({ settings }: { settings: Settings }) {
+  const secondaryPhone = formatRussianPhone(settings.phone);
+  const telegramBrand = settings.telegramBrand.toLowerCase();
+  const telegramOrders = settings.telegramOrders.toLowerCase();
   return (
-    <footer className="home-footer"><div className="home-container"><div><Link className="home-brand" to="/"><span className="home-brand-mark"><Flame /></span><span><strong>ШАШЛЫК <i>ЛАЙК</i> × ШАШЛЫЧ<i>ОК</i></strong><small>Воронеж · настоящий вкус на углях</small></span></Link><p>Две сети — одна любовь к настоящему вкусу.</p></div><nav><strong>Навигация</strong><Link to="/menu">Меню</Link><Link to="/#promotions">Акции</Link><Link to="/delivery">Доставка</Link><Link to="/about">О нас</Link><Link to="/contacts">Контакты</Link></nav><div><strong>Контакты</strong><a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a><a href={phoneHref(settings.phone)}>{settings.phone}</a><span>Ежедневно {settings.workHours}</span></div><div><strong>Мы в Telegram</strong><a href={`https://t.me/${settings.telegramBrand.replace("@", "")}`}>{settings.telegramBrand}</a><a href={`https://t.me/${settings.telegramOrders.replace("@", "")}`}>{settings.telegramOrders}</a></div></div><div className="home-footer-bottom home-container"><span>© {new Date().getFullYear()} Шашлык Лайк × ШашлычОК. Все права защищены.</span><span>Воронеж</span></div></footer>
+    <footer className="home-footer"><div className="home-container"><div><Link className="home-brand" to="/"><span className="home-brand-mark"><Flame /></span><span><strong>ШАШЛЫК <i>ЛАЙК</i> × ШАШЛЫЧ<i>ОК</i></strong><small>Воронеж · настоящий вкус на углях</small></span></Link><p>Две сети — одна любовь к настоящему вкусу.</p></div><nav><strong>Навигация</strong><Link to="/menu">Меню</Link><Link to="/#promotions">Акции</Link><Link to="/delivery">Доставка</Link><Link to="/about">О нас</Link><Link to="/contacts">Контакты</Link></nav><div><strong>Контакты</strong><a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a><a href={phoneHref(secondaryPhone)}>{secondaryPhone}</a><span>Ежедневно {settings.workHours}</span></div><div><strong>Мы в Telegram</strong><a href={`https://t.me/${telegramBrand.replace("@", "")}`}>{telegramBrand}</a><a href={`https://t.me/${telegramOrders.replace("@", "")}`}>{telegramOrders}</a></div></div><div className="home-footer-bottom home-container"><span>© {new Date().getFullYear()} Шашлык Лайк × ШашлычОК. Все права защищены.</span><span>Воронеж</span></div></footer>
   );
 }
 
@@ -1595,44 +1599,169 @@ function Delivery({ data, cartCount, cartTotal, onCartOpen }: DeliveryProps) {
   );
 }
 
-function About() {
+type AboutProps = {
+  settings: Settings;
+  cartCount: number;
+  cartTotal: number;
+  onCartOpen: () => void;
+};
+
+function About({ settings, cartCount, cartTotal, onCartOpen }: AboutProps) {
+  const benefits = [
+    {
+      title: "Качество",
+      text: "Вкус, который хочется повторить.",
+      icon: <Beef />,
+      image: "/assets/about-benefits-panorama.jpg",
+      position: "left"
+    },
+    {
+      title: "Натуральные продукты",
+      text: "Свежие продукты и ингредиенты для любимых блюд.",
+      icon: <Leaf />,
+      image: "/assets/about-benefits-panorama.jpg",
+      position: "center"
+    },
+    {
+      title: "Опыт",
+      text: "Знаем, каким должен быть настоящий вкус блюд на углях.",
+      icon: <ChefHat />,
+      image: "/assets/home-hero-cinematic.webp",
+      position: "experience"
+    },
+    {
+      title: "Команда",
+      text: "Готовим для вас с вниманием к вкусу и качеству.",
+      icon: <Users />,
+      image: "/assets/about-benefits-panorama.jpg",
+      position: "right"
+    }
+  ];
+
   return (
-    <section className="page editorial">
-      <h1>О НАС</h1>
-      <p>
-        Шашлык Лайк — современный digital food brand с шашлыком, шаурмой, люля и блюдами на углях. Главный фокус сайта:
-        быстро выбрать еду, понять цену и оформить заказ без лишних шагов.
-      </p>
-    </section>
+    <div className="about-page">
+      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/about" />
+      <div className="about-content">
+        <section className="about-cinematic" aria-labelledby="about-title">
+          <div className="about-cinematic-media" aria-hidden="true">
+            <img src="/assets/home-hero-cinematic.webp" alt="" width="1792" height="1024" fetchPriority="high" decoding="async" />
+          </div>
+          <div className="about-hero-inner home-container">
+            <div className="about-copy">
+              <p className="about-eyebrow">О нас</p>
+              <h1 id="about-title">Больше чем <strong>шашлык</strong></h1>
+              <p className="about-lead">Шашлык Лайк × ШашлычОК — две сети, которые объединяет любовь к настоящему шашлыку, качественным продуктам и вкусу блюд, приготовленных на углях.</p>
+            </div>
+            <p className="about-handwrite" aria-hidden="true">Настоящий<br />вкус на углях!</p>
+            <div className="about-promises" aria-label="Наши принципы">
+              <div><Leaf /><span><strong>Свежее</strong><small>любимые продукты</small></span></div>
+              <div><Flame /><span><strong>На углях</strong><small>настоящий вкус</small></span></div>
+              <div><Heart /><span><strong>С любовью</strong><small>готовим для вас</small></span></div>
+            </div>
+          </div>
+        </section>
+
+        <section className="about-values home-container" aria-label="Ценности бренда">
+          {benefits.map((benefit) => (
+            <article className={`about-value-card ${benefit.position}`} key={benefit.title}>
+              <img src={benefit.image} alt="" width="1800" height="600" loading="lazy" decoding="async" />
+              <div><span className="about-value-icon">{benefit.icon}</span><h2>{benefit.title}</h2><p>{benefit.text}</p></div>
+            </article>
+          ))}
+        </section>
+
+        <figure className="about-brand-photo">
+          <div className="about-photo-frame"><img src="/assets/home-kiosk-evening.webp" alt="Брендированная визуализация фирменной точки" width="1792" height="1024" loading="lazy" decoding="async" /><i aria-hidden="true" /><b aria-hidden="true" /></div>
+          <figcaption>Фирменный образ точки</figcaption>
+          <p aria-hidden="true">Всегда рады<br />вас видеть!</p>
+          <div className="about-stamp" aria-label="Шашлык Лайк и ШашлычОК, Воронеж">
+            <svg viewBox="0 0 180 180" aria-hidden="true"><defs><path id="about-stamp-path" d="M 24 90 A 66 66 0 1 1 156 90 A 66 66 0 1 1 24 90" /></defs><circle cx="90" cy="90" r="73" /><text><textPath href="#about-stamp-path" startOffset="2%">ШАШЛЫК ЛАЙК × ШАШЛЫЧОК • ВОРОНЕЖ • </textPath></text></svg>
+            <Flame aria-hidden="true" />
+          </div>
+        </figure>
+
+      </div>
+      <HomeFooter settings={settings} />
+    </div>
   );
 }
 
-function Contacts({ settings }: { settings: Settings }) {
+type ContactsProps = {
+  data: Bootstrap;
+  cartCount: number;
+  cartTotal: number;
+  onCartOpen: () => void;
+};
+
+function Contacts({ data, cartCount, cartTotal, onCartOpen }: ContactsProps) {
+  const { settings } = data;
+  const points = data.pickupPoints.filter((point) => point.isActive);
+  const pickupPoint = points.find((point) => point.address.toLocaleLowerCase("ru-RU").includes("бульвар победы")) || points[0];
+  const deliveryZone = settings.deliveryRegions
+    .split(/\r?\n/)
+    .map((region) => region.trim().replace(/\s+Воронежа$/i, ""))
+    .filter(Boolean)
+    .join(" и ") || "Правый берег и Центральный район";
+  const secondaryPhone = formatRussianPhone(settings.phone);
+  const telegramChannel = settings.telegramBrand.toLowerCase();
+  const telegramSupport = settings.telegramOrders.toLowerCase();
+  const mapHref = points[0]?.mapUrl || `https://yandex.ru/maps/?text=${encodeURIComponent("Шашлык Лайк ШашлычОК Воронеж")}`;
+
   return (
-    <section className="page">
-      <div className="page-head">
-        <h1>КОНТАКТЫ</h1>
-        <p>Для заказа и связи используем только данные из ТЗ.</p>
-      </div>
-      <div className="contact-grid">
-        <article>
-          <span>Для заказа</span>
-          <strong>{settings.telegramOrders}</strong>
-        </article>
-        <article>
-          <span>Для связи</span>
-          <strong>{settings.telegramBrand}</strong>
-        </article>
-        <article>
-          <span>Телефон</span>
-          <strong>{settings.phone}</strong>
-        </article>
-        <article>
-          <span>Время работы</span>
-          <strong>{settings.workHours}</strong>
-        </article>
-      </div>
-    </section>
+    <div className="contacts-page">
+      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/contacts" />
+      <main>
+        <section className="contacts-hero" aria-labelledby="contacts-title">
+          <div className="contacts-hero-media" aria-hidden="true"><img src="/assets/home-kiosk-evening.webp" alt="" width="1792" height="1024" fetchPriority="high" decoding="async" /></div>
+          <div className="contacts-hero-inner home-container">
+            <div className="contacts-intro">
+              <p className="contacts-eyebrow">Контакты</p>
+              <h1 id="contacts-title">Всегда <strong>на связи</strong></h1>
+              <p>Отвечаем на вопросы, принимаем заказы и ждём вас в наших киосках в Воронеже.</p>
+            </div>
+            <p className="contacts-handwrite" aria-hidden="true">Ждём вас в наших<br />киосках!</p>
+            <div className="contacts-actions" aria-label="Способы связи">
+              <a href={phoneHref(homePrimaryPhone)}><span className="contacts-action-icon"><Phone /></span><span><small>Заказы и доставка</small><strong>{homePrimaryPhone}</strong></span><ArrowRight /></a>
+              <a href={phoneHref(secondaryPhone)}><span className="contacts-action-icon"><Phone /></span><span><small>Вопросы и поддержка</small><strong>{secondaryPhone}</strong></span><ArrowRight /></a>
+              <a className="telegram" href={`https://t.me/${telegramChannel.replace("@", "")}`} target="_blank" rel="noreferrer"><span className="contacts-action-icon"><Send /></span><span><small>Наш канал в Telegram</small><strong>{telegramChannel}</strong></span><ArrowRight /></a>
+              <a className="telegram" href={`https://t.me/${telegramSupport.replace("@", "")}`} target="_blank" rel="noreferrer"><span className="contacts-action-icon"><MessageCircle /></span><span><small>Поддержка в Telegram</small><strong>{telegramSupport}</strong></span><ArrowRight /></a>
+            </div>
+          </div>
+        </section>
+
+        <section className="contacts-logistics home-container" aria-label="Доставка, самовывоз и карта">
+          <div className="contacts-delivery-grid">
+            <article><span className="contacts-info-icon"><Clock3 /></span><div><h2>Доставка курьером</h2><strong>{settings.workHours}</strong><p>При заказе до {money(settings.freeDeliveryFrom)} <b>{money(settings.deliveryPrice)}</b><br />При заказе от {money(settings.freeDeliveryFrom)} <b>бесплатно</b></p></div></article>
+            <article><span className="contacts-info-icon"><ShoppingBag /></span><div><h2>Самовывоз</h2><strong>{pickupPoint?.address || "Адрес уточняется"}</strong><p>{pickupPoint?.comment || "Комментарий к адресу уточняется"}{pickupPoint?.name === "ШашлычОК" ? <><br />({pickupPoint.name})</> : null}<br /><b>{pickupPoint?.hours || settings.workHours}</b></p></div></article>
+            <article><span className="contacts-info-icon"><Target /></span><div><h2>Зона доставки</h2><strong>{deliveryZone}</strong><p>Доставляем только по указанным районам Воронежа.</p></div></article>
+          </div>
+          <a className="contacts-map" href={mapHref} target="_blank" rel="noreferrer" aria-label="Открыть подтверждённые адреса киосков в Яндекс Картах">
+            <div className="contacts-map-top"><span><MapPin /> Наши киоски на карте</span><ArrowRight /></div>
+            <div className="contacts-map-lines" aria-hidden="true"><i /><i /><i /><i /><b /><b /><b /><b /></div>
+            <div className="contacts-map-copy"><strong>Воронеж</strong><span>Открыть подтверждённые адреса в Яндекс Картах</span></div>
+          </a>
+        </section>
+
+        <section className="contacts-kiosks" aria-labelledby="contacts-kiosks-title">
+          <div className="home-container">
+            <div className="contacts-kiosks-head"><div><p>Наши киоски</p><h2 id="contacts-kiosks-title">Наши киоски</h2><span>Выберите ближайшую точку и постройте маршрут.</span></div><a href={mapHref} target="_blank" rel="noreferrer">Смотреть все <ArrowRight /></a></div>
+            <div className="contacts-kiosk-grid">
+              {points.map((point, index) => {
+                const routeUrl = point.mapUrl || `https://yandex.ru/maps/?text=${encodeURIComponent(`Воронеж, ${point.address}`)}`;
+                const isRoundTheClock = /круглосуточ|24\s*\/\s*7/i.test(point.hours);
+                return (
+                  <article className={index === 0 ? "contacts-kiosk-card featured" : "contacts-kiosk-card"} key={point.id}>
+                    <div className="contacts-kiosk-photo"><img src="/assets/home-kiosk-evening.webp" alt="Брендированная визуализация фирменной точки" width="1792" height="1024" loading="lazy" decoding="async" /><small>Фирменная визуализация</small>{isRoundTheClock && <span>24/7</span>}</div>
+                    <div className="contacts-kiosk-body"><h3>{point.address}</h3>{point.comment && <p>{point.comment}{point.name === "ШашлычОК" ? <><br />({point.name})</> : null}</p>}<div><span><Clock3 /> {isRoundTheClock ? "Круглосуточно" : point.hours || settings.workHours}</span><a href={routeUrl} target="_blank" rel="noreferrer">Построить маршрут <ArrowRight /></a></div></div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      </main>
+      <HomeFooter settings={settings} />
+    </div>
   );
 }
 
