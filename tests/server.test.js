@@ -111,7 +111,7 @@ test("admin bootstrap does not expose Telegram secrets or one-time links", async
   assert.ok(result.body.analyticsSummary);
 });
 
-test("public tracking DTO maps internal status and hides personal data", async () => {
+test("private tracking DTO exposes order details but hides customer identity", async () => {
   const token = await login();
   const admin = await request("/api/admin/bootstrap", { headers: { authorization: "Bearer " + token } });
   const order = admin.body.orders[0];
@@ -119,9 +119,9 @@ test("public tracking DTO maps internal status and hides personal data", async (
   const result = await request("/api/orders/track/" + order.trackingToken);
   assert.equal(result.response.status, 200);
   assert.equal("phone" in result.body.order, false);
-  assert.equal("address" in result.body.order, false);
   assert.equal("customerName" in result.body.order, false);
-  assert.equal(result.body.order.publicStatus, result.body.order.status === "preparing" ? "accepted" : result.body.order.status);
+  assert.equal(typeof result.body.order.address, "string");
+  assert.equal(result.body.order.publicStatus, result.body.order.status);
 });
 
 test("sitemap excludes private routes", async () => {

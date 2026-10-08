@@ -169,9 +169,9 @@ const confirmedPickupPoints = [
 ];
 
 const seedStore = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   categories: [
-    { id: "shashlik", name: "Шашлыки", minPrice: "От 120 ₽ / 100 г", sortOrder: 1 },
+    { id: "shashlik", name: "Шашлыки", minPrice: "От 120 ₽ / 100 г", sortOrder: 1, isActive: true },
     { id: "shawarma", name: "Шаурма", minPrice: "От 240 ₽", sortOrder: 2 },
     { id: "doner", name: "Донер", minPrice: "От 250 ₽", sortOrder: 3 },
     { id: "lyulya", name: "Люля-кебаб", minPrice: "От 250 ₽", sortOrder: 4 },
@@ -589,6 +589,25 @@ async function readStore() {
     store.schemaVersion = 2;
     changed = true;
   }
+  if (Number(store.schemaVersion || 0) < 3) {
+    for (const category of store.categories || []) {
+      if (typeof category.isActive !== "boolean") category.isActive = true;
+    }
+    for (const addon of store.addons || []) {
+      if (typeof addon.description !== "string") addon.description = "";
+      if (typeof addon.imageUrl !== "string") addon.imageUrl = "";
+      if (typeof addon.isCustomerVisible !== "boolean") addon.isCustomerVisible = true;
+      if (!Number.isFinite(addon.sortOrder)) addon.sortOrder = 999;
+    }
+    for (const point of store.pickupPoints || []) {
+      if (typeof point.description !== "string") point.description = "";
+      if (typeof point.imageUrl !== "string") point.imageUrl = "";
+      if (!Array.isArray(point.services)) point.services = [];
+      if (!Number.isFinite(point.sortOrder)) point.sortOrder = 999;
+    }
+    store.schemaVersion = 3;
+    changed = true;
+  }
   if (!Array.isArray(store.users) || !store.users.length) {
     store.users = [createOwnerUser()];
     changed = true;
@@ -723,13 +742,13 @@ class OrderStatusError extends Error {
   }
 }
 
-function publicOrderDto(order) {
-  const publicStatus = order.status === "preparing" ? "accepted" : order.status;
+function publicOrderDto(order, store) {
+  const productsById = new Map((store?.products || []).map((product) => [product.id, product]));
   return {
     orderNumber: order.orderNumber,
     status: order.status,
     statusLabel: orderStatusLabels[order.status],
-    publicStatus,
+    publicStatus: order.status,
     fulfillmentType: order.fulfillmentType,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
@@ -740,7 +759,9 @@ function publicOrderDto(order) {
     completedAt: order.completedAt,
     cancelledAt: order.cancelledAt,
     items: order.items.map((item) => ({
+      productId: item.productId,
       name: item.name,
+      imageUrl: productsById.get(item.productId)?.imageUrl || "/assets/placeholder.svg",
       quantity: item.quantity,
       quantityLabel: item.quantityLabel,
       option: item.option,
@@ -750,7 +771,20 @@ function publicOrderDto(order) {
     subtotal: order.subtotal,
     deliveryPrice: order.deliveryPrice,
     total: order.total,
-    pickupPointName: order.fulfillmentType === "pickup" ? order.pickupPointName : ""
+    pickupPointName: order.fulfillmentType === "pickup" ? order.pickupPointName : "",
+    address: order.fulfillmentType === "delivery" ? order.address : "",
+    apartment: order.fulfillmentType === "delivery" ? order.apartment : "",
+    entrance: order.fulfillmentType === "delivery" ? order.entrance : "",
+    floor: order.fulfillmentType === "delivery" ? order.floor : "",
+    intercom: order.fulfillmentType === "delivery" ? order.intercom : "",
+    comment: order.comment || "",
+    paymentMethod: order.paymentMethod || "PAY_ON_DELIVERY",
+    canReview: order.status === "completed" && !order.review,
+    review: order.review ? {
+      rating: order.review.rating,
+      comment: order.review.comment,
+      createdAt: order.review.createdAt
+    } : null
   };
 }
 
@@ -792,12 +826,12 @@ async function updateOrderStatus({ orderId, orderNumber, targetStatus, expectedS
   });
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = 128 * 1024) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 128 * 1024) {
+    if (size > maxBytes) {
       const error = new Error("Запрос слишком большой");
       error.httpStatus = 413;
       throw error;
@@ -959,10 +993,10 @@ function lineItemTotal(product, quantity, addonsTotal = 0) {
 
 function publicStore(store) {
   return {
-    categories: store.categories.sort((a, b) => a.sortOrder - b.sortOrder),
+    categories: store.categories.filter((category) => category.isActive !== false).sort((a, b) => a.sortOrder - b.sortOrder),
     products: store.products.filter((p) => p.isActive).sort((a, b) => a.sortOrder - b.sortOrder),
-    addons: store.addons.filter((a) => a.isActive),
-    pickupPoints: store.pickupPoints.filter((p) => p.isActive),
+    addons: store.addons.filter((a) => a.isActive && a.isCustomerVisible !== false).sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999)),
+    pickupPoints: store.pickupPoints.filter((p) => p.isActive).sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999)),
     settings: store.settings
   };
 }
@@ -982,6 +1016,7 @@ function adminBootstrap(store, currentUser) {
   return {
     ...safeStore,
     orders: store.orders.map((order) => ({ ...order, availableTransitions: availableOrderTransitions(order) })),
+    orderStatusHistory: store.orderStatusHistory,
     users: store.users.map(serializeUser),
     currentUser: serializeUser(currentUser),
     permissions,
@@ -1056,6 +1091,18 @@ function calculateOrder(store, payload) {
   return { items, subtotal, deliveryPrice, total: subtotal + deliveryPrice, deliveryType };
 }
 
+function sanitizeCategory(input, fallback = {}) {
+  const name = String(input.name ?? fallback.name ?? "").trim();
+  if (!name) throw new Error("Укажите название категории");
+  return {
+    id: fallback.id || String(input.id || crypto.randomUUID()).trim(),
+    name,
+    minPrice: String(input.minPrice ?? fallback.minPrice ?? "").trim(),
+    sortOrder: Math.max(0, Number(input.sortOrder ?? fallback.sortOrder ?? 999)),
+    isActive: Boolean(input.isActive ?? fallback.isActive ?? true)
+  };
+}
+
 function makeOrderNumber(nextIndex) {
   return `SL-${String(nextIndex).padStart(6, "0")}`;
 }
@@ -1069,6 +1116,7 @@ function telegramMessage(order) {
     "Телефон: " + order.phone,
     "Получение: " + (order.deliveryType === "pickup" ? "Самовывоз" : "Доставка"),
     "Адрес: " + (order.deliveryType === "pickup" ? order.pickupPointName || "Точка будет уточнена" : order.address || "Не указан"),
+    "Оплата: " + (order.paymentMethod === "TRANSFER_ON_DELIVERY" ? "переводом при получении" : order.paymentMethod === "CASH_ON_DELIVERY" ? "наличными при получении" : "картой при получении"),
     "",
     "ЗАКАЗ:"
   ];
@@ -1436,7 +1484,34 @@ async function api(req, res, url) {
     if (!enforceRateLimit(req, res, "tracking", 120, 60_000)) return;
     const order = store.orders.find((item) => item.trackingToken === trackingMatch[1]);
     if (!order) return send(res, 404, { error: "Заказ не найден" });
-    return send(res, 200, { order: publicOrderDto(order) });
+    return send(res, 200, { order: publicOrderDto(order, store) });
+  }
+
+  const reviewMatch = url.pathname.match(/^\/api\/orders\/track\/([A-Za-z0-9_-]{40,})\/review$/);
+  if (req.method === "POST" && reviewMatch) {
+    if (!enforceRateLimit(req, res, "order-review", 6, 60 * 60_000)) return;
+    try {
+      const payload = await readJson(req);
+      const rating = Number(payload.rating);
+      const comment = String(payload.comment || "").trim().slice(0, 500);
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        return send(res, 400, { error: "Выберите оценку от 1 до 5" });
+      }
+      const result = await mutateStore(async (freshStore) => {
+        const order = freshStore.orders.find((item) => item.trackingToken === reviewMatch[1]);
+        if (!order) return { notFound: true, changed: false };
+        if (order.status !== "completed") return { unavailable: true, changed: false };
+        if (order.review) return { duplicate: true, order, store: freshStore, changed: false };
+        order.review = { rating, comment, createdAt: new Date().toISOString() };
+        return { order, store: freshStore };
+      });
+      if (result.notFound) return send(res, 404, { error: "Заказ не найден" });
+      if (result.unavailable) return send(res, 409, { error: "Оценить заказ можно после его выполнения" });
+      if (result.duplicate) return send(res, 409, { error: "Отзыв по этому заказу уже отправлен", order: publicOrderDto(result.order, result.store) });
+      return send(res, 201, { order: publicOrderDto(result.order, result.store) });
+    } catch (error) {
+      return send(res, error.httpStatus || 400, { error: error.message || "Не удалось отправить отзыв" });
+    }
   }
 
   if (req.method === "POST" && url.pathname === "/api/orders") {
@@ -1479,7 +1554,9 @@ async function api(req, res, url) {
           subtotal: calculated.subtotal,
           deliveryPrice: calculated.deliveryPrice,
           total: calculated.total,
-          paymentMethod: "PAY_ON_DELIVERY",
+          paymentMethod: ["CARD_ON_DELIVERY", "TRANSFER_ON_DELIVERY", "CASH_ON_DELIVERY"].includes(payload.paymentMethod)
+            ? payload.paymentMethod
+            : "CARD_ON_DELIVERY",
           status: "new",
           telegram: { sent: false, reason: "pending" },
           createdAt,
@@ -1560,6 +1637,21 @@ async function api(req, res, url) {
     return send(res, 200, adminBootstrap(store, adminUser));
   }
 
+  if (req.method === "POST" && url.pathname === "/api/admin/uploads") {
+    if (!hasPermission(adminUser, "products.edit") && !hasPermission(adminUser, "settings.manage")) return forbid(res);
+    const payload = await readJson(req, 7 * 1024 * 1024);
+    const match = String(payload.dataUrl || "").match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) return send(res, 400, { error: "Поддерживаются PNG, JPG и WebP" });
+    const buffer = Buffer.from(match[2], "base64");
+    if (!buffer.length || buffer.length > 5 * 1024 * 1024) return send(res, 413, { error: "Размер изображения не должен превышать 5 МБ" });
+    const extension = match[1] === "jpeg" ? "jpg" : match[1];
+    const uploadsDir = path.join(rootDir, "public", "uploads");
+    await mkdir(uploadsDir, { recursive: true });
+    const fileName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${extension}`;
+    await writeFile(path.join(uploadsDir, fileName), buffer);
+    return send(res, 201, { url: `/uploads/${fileName}` });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/admin/users") {
     if (!ensurePermission(adminUser, res, "users.create")) return;
     const payload = await readJson(req);
@@ -1633,6 +1725,48 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
     return send(res, 200, { ok: true });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/admin/categories") {
+    if (!ensurePermission(adminUser, res, "products.edit")) return;
+    try {
+      const category = sanitizeCategory(await readJson(req));
+      if (store.categories.some((item) => item.id === category.id)) return send(res, 409, { error: "Категория уже существует" });
+      store.categories.push(category);
+      await notifyAudit(store, adminUser, "products", "Добавлена категория", category.name);
+      await writeStore(store);
+      return send(res, 201, { category });
+    } catch (error) {
+      return send(res, 400, { error: error.message });
+    }
+  }
+
+  const categoryMatch = url.pathname.match(/^\/api\/admin\/categories\/([^/]+)$/);
+  if (categoryMatch) {
+    if (!ensurePermission(adminUser, res, "products.edit")) return;
+    const categoryId = decodeURIComponent(categoryMatch[1]);
+    const categoryIndex = store.categories.findIndex((category) => category.id === categoryId);
+    if (categoryIndex === -1) return notFound(res);
+    if (req.method === "PUT") {
+      try {
+        const before = store.categories[categoryIndex];
+        const next = sanitizeCategory(await readJson(req), before);
+        store.categories[categoryIndex] = next;
+        await notifyAudit(store, adminUser, "products", "Изменена категория", next.name, describeChanges(before, next, ["name", "minPrice", "sortOrder", "isActive"]));
+        await writeStore(store);
+        return send(res, 200, { category: next });
+      } catch (error) {
+        return send(res, 400, { error: error.message });
+      }
+    }
+    if (req.method === "DELETE") {
+      const linked = store.products.filter((product) => product.categoryId === categoryId);
+      if (linked.length) return send(res, 409, { error: `Категория используется в ${linked.length} товарах. Сначала перенесите или отключите их.` });
+      const removed = store.categories.splice(categoryIndex, 1)[0];
+      await notifyAudit(store, adminUser, "products", "Удалена категория", removed.name);
+      await writeStore(store);
+      return send(res, 200, { ok: true });
+    }
+  }
+
   if (req.method === "POST" && url.pathname === "/api/admin/products") {
     if (!ensurePermission(adminUser, res, "products.edit")) return;
     const payload = await readJson(req);
@@ -1680,6 +1814,10 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
       name: String(payload.name || "").trim(),
       price: Math.max(0, Number(payload.price || 0)),
       group: String(payload.group || "custom").trim(),
+      description: String(payload.description || "").trim(),
+      imageUrl: String(payload.imageUrl || "").trim(),
+      isCustomerVisible: Boolean(payload.isCustomerVisible ?? true),
+      sortOrder: Math.max(0, Number(payload.sortOrder ?? 999)),
       isActive: Boolean(payload.isActive ?? true)
     };
     if (!addon.name) return send(res, 400, { error: "Укажите название дополнения" });
@@ -1703,6 +1841,10 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
         name: String(payload.name ?? before.name).trim(),
         price: Math.max(0, Number(payload.price ?? before.price)),
         group: String(payload.group ?? before.group).trim(),
+        description: String(payload.description ?? before.description ?? "").trim(),
+        imageUrl: String(payload.imageUrl ?? before.imageUrl ?? "").trim(),
+        isCustomerVisible: Boolean(payload.isCustomerVisible ?? before.isCustomerVisible ?? true),
+        sortOrder: Math.max(0, Number(payload.sortOrder ?? before.sortOrder ?? 999)),
         isActive: Boolean(payload.isActive ?? before.isActive)
       };
       store.addons[addonIndex] = next;
@@ -1763,6 +1905,10 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
       hours: String(payload.hours || store.settings.workHours),
       mapUrl: String(payload.mapUrl || ""),
       comment: String(payload.comment || ""),
+      description: String(payload.description || ""),
+      imageUrl: String(payload.imageUrl || ""),
+      services: Array.isArray(payload.services) ? payload.services.map(String).slice(0, 12) : [],
+      sortOrder: Math.max(0, Number(payload.sortOrder ?? 999)),
       isActive: Boolean(payload.isActive ?? true)
     };
     store.pickupPoints.push(point);
@@ -1896,17 +2042,6 @@ createServer(async (req, res) => {
   void pollTelegram();
   setInterval(() => void pollTelegram(), 5000).unref();
 });
-
-
-
-
-
-
-
-
-
-
-
 
 
 

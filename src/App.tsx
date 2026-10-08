@@ -1,10 +1,10 @@
 import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowRight, Beef, Bike, ChefHat, ChevronDown, ChevronLeft, ChevronRight, Clock3, Flame, Grid2X2, Heart, Leaf, List, MapPin, Menu as MenuIcon, MessageCircle, Phone, Plus, Search, Send, ShoppingBag, SlidersHorizontal, Store, Target, Users, X } from "lucide-react";
+import { ArrowRight, Beef, Bike, Check, ChefHat, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Clock3, Flame, Grid2X2, Heart, House, Leaf, List, MapPin, Menu as MenuIcon, MessageCircle, Package, Phone, Plus, RefreshCw, Search, Send, ShoppingBag, SlidersHorizontal, Star, Store, Target, UserRound, Users, WalletCards, X } from "lucide-react";
 import { apiFetch, apiUrl } from "./api";
 
-type Category = { id: string; name: string; minPrice: string; sortOrder: number };
-type Addon = { id: string; name: string; price: number; isActive: boolean; group: string };
+type Category = { id: string; name: string; minPrice: string; sortOrder: number; isActive?: boolean };
+type Addon = { id: string; name: string; price: number; isActive: boolean; group: string; description?: string; imageUrl?: string; isCustomerVisible?: boolean; sortOrder?: number };
 type Product = {
   id: string;
   slug: string;
@@ -24,7 +24,7 @@ type Product = {
   addonIds?: string[];
   sortOrder: number;
 };
-type PickupPoint = { id: string; name: string; address: string; phone: string; hours: string; mapUrl: string; comment?: string; isActive: boolean };
+type PickupPoint = { id: string; name: string; address: string; phone: string; hours: string; mapUrl: string; comment?: string; description?: string; imageUrl?: string; services?: string[]; sortOrder?: number; isActive: boolean };
 type Settings = {
   brand: string;
   phone: string;
@@ -65,7 +65,8 @@ type AdminUser = {
 };
 type OrderStatus = "new" | "accepted" | "preparing" | "ready" | "delivering" | "completed" | "cancelled";
 type AnalyticsSummary = { sessions: number; events: number; checkoutErrors: number; funnel: Record<string, number>; sources: Array<{ source: string; orders: number; revenue?: number }> };
-type AdminBootstrap = Bootstrap & { orders: Order[]; orderStatuses: OrderStatus[]; orderStatusLabels: Record<OrderStatus, string>; users: AdminUser[]; currentUser: AdminUser; permissions: string[]; analyticsSummary: AnalyticsSummary | null };
+type OrderHistoryEntry = { id: string; orderId: string; fromStatus: OrderStatus | null; toStatus: OrderStatus; changedAt: string; changedByUserId: string | null; source: string };
+type AdminBootstrap = Bootstrap & { orders: Order[]; orderStatusHistory: OrderHistoryEntry[]; orderStatuses: OrderStatus[]; orderStatusLabels: Record<OrderStatus, string>; users: AdminUser[]; currentUser: AdminUser; permissions: string[]; analyticsSummary: AnalyticsSummary | null };
 type Attribution = { utm_source: string; utm_medium: string; utm_campaign: string; utm_content: string; utm_term: string; referrer: string; landing_page: string };
 
 type Order = {
@@ -76,6 +77,12 @@ type Order = {
   deliveryType: "delivery" | "pickup";
   address: string;
   comment: string;
+  apartment?: string;
+  entrance?: string;
+  floor?: string;
+  intercom?: string;
+  pickupPointName?: string;
+  paymentMethod?: string;
   items: Array<{ name: string; quantity: number; quantityLabel?: string; unit: string; total: number; option?: string; addons: Addon[] }>;
   subtotal: number;
   deliveryPrice: number;
@@ -100,21 +107,30 @@ type TrackingOrder = {
   deliveringAt: string;
   completedAt: string;
   cancelledAt: string;
-  items: Array<{ name: string; quantity: number; quantityLabel?: string; option?: string; addons: Array<{ name: string }>; total: number }>;
+  items: Array<{ productId: string; name: string; imageUrl: string; quantity: number; quantityLabel?: string; option?: string; addons: Array<{ name: string }>; total: number }>;
   subtotal: number;
   deliveryPrice: number;
   total: number;
   pickupPointName: string;
+  address: string;
+  apartment: string;
+  entrance: string;
+  floor: string;
+  intercom: string;
+  comment: string;
+  paymentMethod: string;
+  canReview: boolean;
+  review: { rating: number; comment: string; createdAt: string } | null;
 };
 
-const orderStatusMeta: Record<OrderStatus, { label: string; icon: string }> = {
-  new: { label: "Заказ создан", icon: "●" },
-  accepted: { label: "Заказ принят", icon: "✓" },
-  preparing: { label: "Готовится", icon: "🔥" },
-  ready: { label: "Заказ готов", icon: "✓" },
-  delivering: { label: "Передан курьеру", icon: "→" },
-  completed: { label: "Заказ доставлен", icon: "✓" },
-  cancelled: { label: "Заказ отменён", icon: "×" }
+const orderStatusMeta: Record<OrderStatus, { label: string }> = {
+  new: { label: "Заказ создан" },
+  accepted: { label: "Заказ принят" },
+  preparing: { label: "Готовим" },
+  ready: { label: "Заказ готов" },
+  delivering: { label: "Передан курьеру" },
+  completed: { label: "Заказ доставлен" },
+  cancelled: { label: "Заказ отменён" }
 };
 
 const money = (value: number) => `${value.toLocaleString("ru-RU")} ₽`;
@@ -159,6 +175,7 @@ const telegramReasonText = (reason?: string) => {
   if (reason.toLowerCase().includes("telegram")) return "Telegram вернул ошибку";
   return "Не отправлено";
 };
+const paymentMethodText = (method?: string) => method === "TRANSFER_ON_DELIVERY" ? "Переводом при получении" : method === "CASH_ON_DELIVERY" ? "Наличными при получении" : method === "PAY_ON_DELIVERY" ? "При получении" : "Картой при получении";
 
 const emptyAttribution: Attribution = { utm_source: "", utm_medium: "", utm_campaign: "", utm_content: "", utm_term: "", referrer: "", landing_page: "" };
 
@@ -252,10 +269,18 @@ function useBootstrap() {
   return { data, error, reload };
 }
 
-function useActiveOrder() {
+function fetchTrackingOrder(token: string) {
+  return apiFetch(`/api/orders/track/${encodeURIComponent(token)}`, { cache: "no-store" });
+}
+
+function useActiveOrder(enabled = true) {
   const [order, setOrder] = useState<TrackingOrder | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setOrder(null);
+      return;
+    }
     let active = true;
     let timer = 0;
     const load = async () => {
@@ -265,7 +290,7 @@ function useActiveOrder() {
         return;
       }
       try {
-        const response = await apiFetch(`/api/orders/track/${encodeURIComponent(token)}`, { cache: "no-store" });
+        const response = await fetchTrackingOrder(token);
         if (response.status === 404) {
           clearActiveOrderToken(token);
           if (active) setOrder(null);
@@ -292,7 +317,7 @@ function useActiveOrder() {
       window.clearInterval(timer);
       window.removeEventListener("active-order-changed", handleChange);
     };
-  }, []);
+  }, [enabled]);
 
   return order;
 }
@@ -381,9 +406,10 @@ function App() {
   });
   const activeTheme = themeMode === "auto" ? currentShiftTheme() : themeMode;
   const isAdmin = location.pathname.startsWith("/admin");
+  const isOrderPage = location.pathname.startsWith("/order/");
   const isHome = location.pathname === "/";
-  const usesHomeDesign = isHome || location.pathname === "/menu" || location.pathname === "/delivery" || location.pathname === "/pickup" || location.pathname === "/about" || location.pathname === "/contacts";
-  const activeOrder = useActiveOrder();
+  const usesHomeDesign = isHome || isOrderPage || location.pathname === "/menu" || location.pathname === "/delivery" || location.pathname === "/pickup" || location.pathname === "/about" || location.pathname === "/contacts";
+  const activeOrder = useActiveOrder(!isAdmin && !isOrderPage);
 
   useRouteMetadata(location.pathname);
 
@@ -411,19 +437,20 @@ function App() {
   return (
     <>
       {!isAdmin && !usesHomeDesign && <Header settings={data.settings} themeMode={themeMode} activeTheme={activeTheme} onThemeMode={setThemeMode} />}
-      {!isAdmin && activeOrder && <ActiveOrderIndicator order={activeOrder} />}
+      {!isAdmin && !usesHomeDesign && activeOrder && <ActiveOrderIndicator order={activeOrder} />}
       <div className="delivery-content">
         <Routes>
-          <Route path="/" element={<Home data={data} onAdd={addToCart} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
-          <Route path="/menu" element={<Menu data={data} onAdd={addToCart} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
-          <Route path="/delivery" element={<Delivery data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
+          <Route path="/" element={<Home data={data} onAdd={addToCart} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
+          <Route path="/menu" element={<Menu data={data} onAdd={addToCart} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
+          <Route path="/product/:slug" element={<ProductPage data={data} onAdd={addToCart} />} />
+          <Route path="/delivery" element={<Delivery data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
           <Route path="/pickup" element={<Navigate to="/delivery#kiosks" replace />} />
-          <Route path="/about" element={<About settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
-          <Route path="/contacts" element={<Contacts data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
+          <Route path="/about" element={<About settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
+          <Route path="/contacts" element={<Contacts data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
           <Route path="/cart" element={<CartPage data={data} cart={cart} />} />
           <Route path="/checkout" element={<Checkout data={data} cart={cart} />} />
           <Route path="/order-success" element={<Success settings={data.settings} />} />
-          <Route path="/order/:trackingToken" element={<OrderTracking />} />
+          <Route path="/order/:trackingToken" element={<OrderTracking settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
           <Route path="/admin" element={<Admin onChanged={reload} themeMode={themeMode} activeTheme={activeTheme} onThemeMode={setThemeMode} />} />
           <Route path="*" element={<SystemState title="404" text="Такой страницы нет." />} />
         </Routes>
@@ -489,15 +516,63 @@ function useRouteMetadata(pathname: string) {
   }, [pathname]);
 }
 
+type OrderStageKind = "created" | "cooking" | "handoff" | "completed";
+type OrderStage = { key: string; label: string; kind: OrderStageKind; timestamp: string };
+
+function orderStages(order: TrackingOrder): OrderStage[] {
+  const pickup = order.fulfillmentType === "pickup";
+  return [
+    { key: "created", label: "Заказ создан", kind: "created", timestamp: order.createdAt },
+    { key: "cooking", label: order.status === "ready" ? "Заказ готов" : "Готовим", kind: "cooking", timestamp: order.preparingAt || order.acceptedAt },
+    { key: "handoff", label: pickup ? "Можно забирать" : "Передан курьеру", kind: "handoff", timestamp: pickup ? order.readyAt : order.deliveringAt },
+    { key: "completed", label: pickup ? "Заказ выдан" : "Доставлен", kind: "completed", timestamp: order.completedAt }
+  ];
+}
+
+function orderStageIndex(order: TrackingOrder) {
+  if (order.status === "cancelled") return -1;
+  if (order.status === "completed") return 3;
+  if (order.fulfillmentType === "pickup" && order.status === "ready") return 2;
+  if (order.status === "delivering") return 2;
+  if (["accepted", "preparing", "ready"].includes(order.status)) return 1;
+  return 0;
+}
+
+function OrderStageIcon({ kind }: { kind: OrderStageKind }) {
+  if (kind === "created") return <Check aria-hidden="true" />;
+  if (kind === "cooking") return <ChefHat aria-hidden="true" />;
+  if (kind === "handoff") return <Bike aria-hidden="true" />;
+  return <House aria-hidden="true" />;
+}
+
+function statusMessage(order: TrackingOrder) {
+  if (order.status === "new") return "Ожидает подтверждения";
+  if (order.status === "accepted") return "Заказ принят";
+  if (order.status === "preparing") return "Готовим ваш заказ";
+  if (order.status === "ready") return order.fulfillmentType === "pickup" ? "Можно забирать" : "Готов к отправке";
+  if (order.status === "delivering") return "Заказ в пути";
+  if (order.status === "completed") return order.fulfillmentType === "pickup" ? "Заказ выдан" : "Заказ доставлен";
+  return "Заказ отменён";
+}
+
+function formatOrderTime(value: string) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
 function ActiveOrderIndicator({ order }: { order: TrackingOrder }) {
   const token = localStorage.getItem("activeOrderTrackingToken") || "";
-  const status = order.status === "preparing" ? orderStatusMeta.accepted : orderStatusMeta[order.status];
+  if (!token) return null;
+  const stages = orderStages(order);
+  const currentIndex = orderStageIndex(order);
   return (
-    <Link className="active-order-indicator" to={`/order/${encodeURIComponent(token)}`} aria-label={`Открыть статус заказа ${order.orderNumber}: ${status.label}`}>
-      <span className="active-order-pulse" aria-hidden="true" />
-      <span><small>Ваш заказ {order.orderNumber}</small><strong>{status.label}</strong></span>
-      <b>Статус →</b>
-    </Link>
+    <aside className="active-order-indicator" aria-label={`Активный заказ ${order.orderNumber}`} aria-live="polite">
+      <div className="active-order-summary"><span className="active-order-pulse" aria-hidden="true" /><span><strong>Ваш заказ #{order.orderNumber}</strong><small>{statusMessage(order)}</small></span></div>
+      <ol className="active-order-progress" aria-label="Этапы заказа">
+        {stages.map((stage, index) => <li key={stage.key} className={index < currentIndex ? "complete" : index === currentIndex ? "current" : "pending"}><i><OrderStageIcon kind={stage.kind} /></i><span>{stage.label}</span></li>)}
+      </ol>
+      <Link className="active-order-link" to={`/order/${encodeURIComponent(token)}`} aria-label={`Открыть статус заказа ${order.orderNumber}`}>Статус заказа <ArrowRight aria-hidden="true" /></Link>
+    </aside>
   );
 }
 
@@ -516,7 +591,7 @@ function Header({ settings, themeMode, activeTheme, onThemeMode }: { settings: S
         ☰
       </button>
       <Link className="brand" to="/" aria-label="Шашлык Лайк">
-        <img src="/assets/logo.png" alt="" aria-hidden="true" width="52" height="52" decoding="async" />
+        <span className="public-logo-flame" aria-hidden="true"><Flame /></span>
         <span>
           <strong>{settings.brand}</strong>
           <small>Вкус, который заслуживает лайка!</small>
@@ -584,12 +659,13 @@ type HomeProps = {
   cartCount: number;
   cartTotal: number;
   onCartOpen: () => void;
+  activeOrder: TrackingOrder | null;
 };
 
 const homePrimaryPhone = "+7 (909) 211-82-11";
 const phoneHref = (value: string) => `tel:${value.replace(/[^+\d]/g, "")}`;
 
-function Home({ data, onAdd, cartCount, cartTotal, onCartOpen }: HomeProps) {
+function Home({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: HomeProps) {
   const activeProducts = data.products.filter((product) => product.isActive);
   const featuredProducts = activeProducts.filter((product) => product.isFeatured);
   const featured = (featuredProducts.length >= 5 ? featuredProducts : activeProducts).slice(0, 5);
@@ -612,7 +688,7 @@ function Home({ data, onAdd, cartCount, cartTotal, onCartOpen }: HomeProps) {
 
   return (
     <div className="home-shell">
-      <HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} />
+      <HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activeOrder={activeOrder} />
       <section className="home-hero" aria-labelledby="home-title">
         <div className="home-hero-media" aria-hidden="true">
           <img src="/assets/home-hero-cinematic.webp" alt="" width="1792" height="1024" fetchPriority="high" decoding="async" />
@@ -726,11 +802,12 @@ function HomeBenefit({ icon, title, text }: { icon: ReactNode; title: string; te
   return <div className="home-benefit"><span>{icon}</span><p><strong>{title}</strong><small>{text}</small></p></div>;
 }
 
-function HomeHeader({ settings, cartCount, cartTotal, onCartOpen, activePath }: { settings: Settings; cartCount: number; cartTotal: number; onCartOpen: () => void; activePath?: string }) {
+function HomeHeader({ settings, cartCount, cartTotal, onCartOpen, activePath, activeOrder }: { settings: Settings; cartCount: number; cartTotal: number; onCartOpen: () => void; activePath?: string; activeOrder?: TrackingOrder | null }) {
   const [open, setOpen] = useState(false);
   const secondaryPhone = formatRussianPhone(settings.phone);
   const navigation = [["Меню", "/menu"], ["Акции", "#promotions"], ["Доставка", "/delivery"], ["О нас", "/about"], ["Контакты", "/contacts"]];
   return (
+    <>
     <header className="home-header">
       <div className="home-header-inner home-container">
         <Link className="home-brand" to="/" aria-label="Шашлык Лайк и ШашлычОК, главная"><span className="home-brand-mark"><Flame /></span><span><strong>ШАШЛЫК <i>ЛАЙК</i> <b>×</b> ШАШЛЫЧ<i>ОК</i></strong><small>Воронеж · настоящий вкус на углях</small></span></Link>
@@ -746,6 +823,8 @@ function HomeHeader({ settings, cartCount, cartTotal, onCartOpen, activePath }: 
         </div>
       </div>
     </header>
+    {activeOrder && <ActiveOrderIndicator order={activeOrder} />}
+    </>
   );
 }
 
@@ -794,12 +873,13 @@ type MenuProps = {
   cartCount: number;
   cartTotal: number;
   onCartOpen: () => void;
+  activeOrder: TrackingOrder | null;
 };
 
 type MenuSort = "default" | "price-asc" | "price-desc" | "name";
 type MenuView = "grid" | "list";
 
-function Menu({ data, onAdd, cartCount, cartTotal, onCartOpen }: MenuProps) {
+function Menu({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: MenuProps) {
   const [params, setParams] = useSearchParams();
   const active = params.get("category") || "all";
   const [query, setQuery] = useState("");
@@ -843,7 +923,7 @@ function Menu({ data, onAdd, cartCount, cartTotal, onCartOpen }: MenuProps) {
 
   return (
     <div className="menu-shell">
-      <HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/menu" />
+      <HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/menu" activeOrder={activeOrder} />
 
       <section className="menu-hero" aria-labelledby="menu-title">
         <div className="menu-hero-media" aria-hidden="true"><img src="/assets/home-hero-cinematic.webp" alt="" width="1792" height="1024" fetchPriority="high" decoding="async" /></div>
@@ -965,12 +1045,12 @@ function ProductCard({ product, data, onAdd, favorite, onFavorite }: { product: 
   return (
     <article className={`menu-product-card${product.isAvailable ? "" : " is-unavailable"}${configuring ? " is-configuring" : ""}`} aria-disabled={!product.isAvailable || undefined}>
       <div className="product-media">
-        <img src={product.imageUrl || "/assets/placeholder.svg"} alt={product.name} loading="lazy" decoding="async" width="800" height="600" />
+        <Link className="product-media-link" to={`/product/${product.slug}`} aria-label={`Открыть ${product.name}`}><img src={product.imageUrl || "/assets/placeholder.svg"} alt={product.name} loading="lazy" decoding="async" width="800" height="600" /></Link>
         {product.badge && <span>{product.badge}</span>}
         <button type="button" className={`menu-favorite${favorite ? " active" : ""}`} aria-pressed={favorite} onClick={() => onFavorite(product.id)} aria-label={`${favorite ? "Убрать" : "Добавить"} ${product.name} ${favorite ? "из" : "в"} избранное`}><Heart fill={favorite ? "currentColor" : "none"} /></button>
       </div>
       <div className="product-body">
-        <div><h3 className="product-title" title={product.name}>{product.name}</h3><p className="product-description" title={product.description}>{product.description}</p></div>
+        <div><h3 className="product-title" title={product.name}><Link to={`/product/${product.slug}`}>{product.name}</Link></h3><p className="product-description" title={product.description}>{product.description}</p></div>
         <div className="menu-product-buy"><small>{product.unit}</small><strong className="price">{money(product.price)}</strong><button ref={configureButtonRef} type="button" disabled={!product.isAvailable} onClick={handleAdd} aria-label={product.isAvailable ? `Добавить ${product.name} в корзину` : `${product.name} недоступен`}><Plus /></button></div>
       </div>
       {configuring && (
@@ -1017,6 +1097,32 @@ function ProductCard({ product, data, onAdd, favorite, onFavorite }: { product: 
       )}
     </article>
   );
+}
+
+function ProductPage({ data, onAdd }: { data: Bootstrap; onAdd: (product: Product, quantity: number, option?: string, addons?: string[]) => void }) {
+  const { slug = "" } = useParams();
+  const product = data.products.find((item) => item.slug === slug && item.isActive);
+  const [quantity, setQuantity] = useState(product?.step || 1);
+  const [option, setOption] = useState(product?.options?.[0] || "");
+  const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  useEffect(() => { if (product) trackEvent("product_view", { productId: product.id, categoryId: product.categoryId }); }, [product?.id]);
+  if (!product) return <SystemState title="Товар не найден" text="Возможно, он временно отключён или удалён из меню." />;
+  const addons = data.addons.filter((addon) => addon.isActive && product.addonIds?.includes(addon.id));
+  const addonTotal = selectedAddons.reduce((sum, id) => sum + (data.addons.find((addon) => addon.id === id)?.price || 0), 0);
+  const total = lineItemTotal(product, quantity, addonTotal);
+  const related = data.products.filter((item) => item.id !== product.id && item.categoryId === product.categoryId && item.isActive).slice(0, 4);
+  return <main className="product-page page">
+    <nav className="menu-breadcrumb" aria-label="Хлебные крошки"><Link to="/">Главная</Link><ChevronRight /><Link to="/menu">Меню</Link><ChevronRight /><span>{product.name}</span></nav>
+    <section className="product-detail">
+      <div className="product-detail-media"><img src={product.imageUrl || "/assets/placeholder.svg"} alt={product.name} />{product.badge && <span>{product.badge}</span>}</div>
+      <div className="product-detail-copy"><p className="eyebrow">Настоящий вкус на углях</p><h1>{product.name}</h1><p>{product.description}</p><div className="product-detail-meta"><span>{product.unit}</span><span className={product.isAvailable ? "status-pill ok" : "status-pill stop"}>{product.isAvailable ? "В наличии" : "Недоступен"}</span></div>
+        {!!product.options?.length && <label>Вариант<select value={option} onChange={(event) => setOption(event.target.value)}>{product.options.map((item) => <option key={item}>{item}</option>)}</select></label>}
+        {!!addons.length && <fieldset className="product-detail-addons"><legend>Добавьте к заказу</legend>{addons.map((addon) => <label key={addon.id}><input type="checkbox" checked={selectedAddons.includes(addon.id)} onChange={(event) => setSelectedAddons((current) => event.target.checked ? [...current, addon.id] : current.filter((id) => id !== addon.id))} /><span>{addon.name}</span><b>+{money(addon.price)}</b></label>)}</fieldset>}
+        <div className="product-detail-buy"><Quantity value={quantity} step={product.step || 1} displayValue={formatQuantity(product, quantity)} onChange={setQuantity} /><strong>{money(total)}</strong><button className="button primary" disabled={!product.isAvailable} onClick={() => onAdd(product, quantity, option, selectedAddons)}><ShoppingBag size={19} /> Добавить в корзину</button></div>
+      </div>
+    </section>
+    {!!related.length && <section className="product-related"><div className="section-head"><h2>Вам также может понравиться</h2></div><div className="product-related-grid">{related.map((item) => <Link key={item.id} to={`/product/${item.slug}`}><img src={item.imageUrl} alt="" /><span>{item.name}</span><b>{money(item.price)}</b></Link>)}</div></section>}
+  </main>;
 }
 
 function Quantity({ value, step, displayValue, onChange }: { value: number; step: number; displayValue?: string; onChange: (value: number) => void }) {
@@ -1159,6 +1265,7 @@ function Totals({ subtotal, deliveryPrice, total }: { subtotal: number; delivery
 function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof useCart> }) {
   const navigate = useNavigate();
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
+  const [paymentMethod, setPaymentMethod] = useState<"CARD_ON_DELIVERY" | "TRANSFER_ON_DELIVERY">("CARD_ON_DELIVERY");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [addressState, setAddressState] = useState<{ status: "idle" | "checking" | "valid" | "invalid"; message: string }>({ status: "idle", message: "" });
@@ -1195,6 +1302,7 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
     const payload = {
       ...form,
       deliveryType,
+      paymentMethod,
       pickupPointName: pickupPoint?.name || "",
       attribution: captureAttribution(),
       analyticsSessionId: analyticsSessionId(),
@@ -1300,8 +1408,12 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
             <textarea value={form.comment} onChange={(event) => setForm({ ...form, comment: event.target.value })} />
           </label>
           <div className="payment-note">
-            <strong>ОПЛАТА ПРИ ПОЛУЧЕНИИ</strong>
-            <p>Мы передадим ваш заказ в обработку и свяжемся с вами для подтверждения. Оплата производится при получении заказа.</p>
+            <strong>Способ оплаты при получении</strong>
+            <div className="segmented checkout-payment-options" role="radiogroup" aria-label="Способ оплаты">
+              <button type="button" role="radio" aria-checked={paymentMethod === "CARD_ON_DELIVERY"} className={paymentMethod === "CARD_ON_DELIVERY" ? "active" : ""} onClick={() => setPaymentMethod("CARD_ON_DELIVERY")}>Картой при получении</button>
+              <button type="button" role="radio" aria-checked={paymentMethod === "TRANSFER_ON_DELIVERY"} className={paymentMethod === "TRANSFER_ON_DELIVERY" ? "active" : ""} onClick={() => setPaymentMethod("TRANSFER_ON_DELIVERY")}>Переводом при получении</button>
+            </div>
+            <p>Онлайн-оплаты на сайте нет. Мы свяжемся с вами для подтверждения заказа.</p>
           </div>
           {error && <p className="form-error">{error}</p>}
           <button className="button primary full" disabled={busy} aria-busy={busy}>
@@ -1344,10 +1456,30 @@ function Success({ settings }: { settings: Settings }) {
   );
 }
 
-function OrderTracking() {
+type OrderTrackingProps = { settings: Settings; cartCount: number; cartTotal: number; onCartOpen: () => void };
+
+function OrderStatusState({ title, text, action, onAction }: { title: string; text: string; action?: string; onAction?: () => void }) {
+  return <main className="order-status-state"><span><Flame aria-hidden="true" /></span><p>Статус заказа</p><h1>{title}</h1><div>{text}</div>{action && onAction && <button type="button" onClick={onAction}><RefreshCw aria-hidden="true" /> {action}</button>}<Link to="/">Вернуться на главную <ArrowRight aria-hidden="true" /></Link></main>;
+}
+
+function orderHeroCopy(order: TrackingOrder) {
+  if (order.status === "new") return { title: "Заказ", accent: "создан", lead: "Мы получили заказ. Как только команда подтвердит его, статус обновится автоматически." };
+  if (["accepted", "preparing"].includes(order.status)) return { title: "Ваш заказ", accent: "готовится", lead: "Команда уже готовит ваши блюда. Здесь отображается только подтверждённый сервером статус." };
+  if (order.status === "ready") return { title: "Заказ", accent: "готов", lead: order.fulfillmentType === "pickup" ? "Заказ готов к выдаче в выбранном киоске." : "Заказ приготовлен и ожидает передачи курьеру." };
+  if (order.status === "delivering") return { title: "Ваш заказ", accent: "в пути", lead: "Заказ передан курьеру и направляется по адресу доставки." };
+  if (order.status === "completed") return { title: "Заказ", accent: order.fulfillmentType === "pickup" ? "выдан" : "доставлен", lead: "Спасибо, что выбрали Шашлык Лайк × ШашлычОК." };
+  return { title: "Заказ", accent: "отменён", lead: "Для уточнения деталей свяжитесь с нами по телефону или в Telegram." };
+}
+
+function OrderTracking({ settings, cartCount, cartTotal, onCartOpen }: OrderTrackingProps) {
   const { trackingToken = "" } = useParams();
   const [order, setOrder] = useState<TrackingOrder | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "not-found" | "network-error" | "reconnecting">("loading");
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [rating, setRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewState, setReviewState] = useState<"idle" | "sending" | "error">("idle");
+  const [reviewError, setReviewError] = useState("");
   const completedTracked = useRef(false);
 
   useEffect(() => {
@@ -1357,10 +1489,11 @@ function OrderTracking() {
     }
     let active = true;
     let timer = 0;
+    let hasConfirmedOrder = Boolean(order);
     trackEvent("order_tracking_opened");
     const load = async (initial = false) => {
       try {
-        const response = await apiFetch(`/api/orders/track/${encodeURIComponent(trackingToken)}`, { cache: "no-store" });
+        const response = await fetchTrackingOrder(trackingToken);
         if (response.status === 404) {
           if (active) setState("not-found");
           return;
@@ -1368,16 +1501,18 @@ function OrderTracking() {
         if (!response.ok) throw new Error("network");
         const payload = await response.json() as { order: TrackingOrder };
         if (active) {
+          hasConfirmedOrder = true;
           setOrder(payload.order);
           setState("ready");
           if (["completed", "cancelled"].includes(payload.order.status)) clearActiveOrderToken(trackingToken);
+          else setActiveOrderToken(trackingToken);
           if (payload.order.status === "completed" && !completedTracked.current) {
             completedTracked.current = true;
             trackEvent("order_completed", { value: payload.order.total });
           }
         }
       } catch {
-        if (active) setState(initial && !order ? "network-error" : "reconnecting");
+        if (active) setState(initial && !hasConfirmedOrder ? "network-error" : "reconnecting");
       }
     };
     void load(true);
@@ -1386,73 +1521,110 @@ function OrderTracking() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [trackingToken]);
+  }, [trackingToken, reloadVersion]);
 
-  if (state === "loading") return <SystemState title="ЗАГРУЖАЕМ ЗАКАЗ" text="Получаем актуальный статус с сервера." />;
-  if (state === "not-found") return <SystemState title="ЗАКАЗ НЕ НАЙДЕН" text="Ссылка недействительна или заказ больше недоступен." />;
-  if (state === "network-error" && !order) return <SystemState title="НЕТ СВЯЗИ" text="Не удалось загрузить заказ. Проверьте интернет и обновите страницу." />;
+  const submitReview = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!order || rating < 1 || reviewState === "sending") return;
+    setReviewState("sending");
+    setReviewError("");
+    try {
+      const response = await apiFetch(`/api/orders/track/${encodeURIComponent(trackingToken)}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rating, comment: reviewComment }) });
+      const payload = await response.json() as { order?: TrackingOrder; error?: string };
+      if (!response.ok || !payload.order) throw new Error(payload.error || "Не удалось отправить отзыв");
+      setOrder(payload.order);
+      setReviewState("idle");
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Не удалось отправить отзыв");
+      setReviewState("error");
+    }
+  };
+
+  const header = <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} />;
+  if (state === "loading") return <div className="order-status-shell home-shell">{header}<OrderStatusState title="Загружаем заказ" text="Получаем последний подтверждённый статус с сервера." /></div>;
+  if (state === "not-found") return <div className="order-status-shell home-shell">{header}<OrderStatusState title="Заказ не найден" text="Ссылка недействительна или заказ больше недоступен." /></div>;
+  if (state === "network-error" && !order) return <div className="order-status-shell home-shell">{header}<OrderStatusState title="Нет связи" text="Не удалось загрузить заказ. Проверьте подключение и попробуйте снова." action="Повторить" onAction={() => { setState("loading"); setReloadVersion((value) => value + 1); }} /></div>;
   if (!order) return null;
 
-  const stages: Array<{ status: OrderStatus; label: string; timestamp: keyof TrackingOrder }> = [
-    { status: "new", label: "Заказ создан", timestamp: "createdAt" },
-    { status: "accepted", label: "Заказ принят", timestamp: "acceptedAt" },
-    { status: "ready", label: "Готов", timestamp: "readyAt" },
-    ...(order.fulfillmentType === "delivery" ? [{ status: "delivering" as OrderStatus, label: "Передан курьеру", timestamp: "deliveringAt" as keyof TrackingOrder }] : []),
-    { status: "completed", label: order.fulfillmentType === "pickup" ? "Заказ выдан" : "Доставлен", timestamp: "completedAt" }
-  ];
-  const publicStatus = order.status === "preparing" ? "accepted" : order.status;
-  const currentIndex = stages.findIndex((stage) => stage.status === publicStatus);
-  const expected = ({
-    new: "Ожидаем подтверждения",
-    accepted: "Около 30–50 минут",
-    preparing: "Около 20–40 минут",
-    ready: order.fulfillmentType === "pickup" ? "Можно забирать" : "Скоро передадим курьеру",
-    delivering: "Около 10–25 минут",
-    completed: "Заказ уже у вас",
-    cancelled: "Заказ остановлен"
-  } as Record<OrderStatus, string>)[order.status];
-  const currentMeta = order.status === "preparing" ? orderStatusMeta.accepted : orderStatusMeta[order.status];
-  const publicLabel = order.status === "completed" && order.fulfillmentType === "pickup" ? "Заказ выдан" : currentMeta.label;
+  const stages = orderStages(order);
+  const currentIndex = orderStageIndex(order);
+  const hero = orderHeroCopy(order);
+  const apartmentDetails = [order.apartment && `кв. ${order.apartment}`, order.entrance && `подъезд ${order.entrance}`, order.floor && `этаж ${order.floor}`, order.intercom && `домофон ${order.intercom}`].filter(Boolean).join(", ");
+  const supportPhone = "+7 (909) 211-82-11";
 
   return (
-    <section className={`tracking-page status-${order.status}`}>
-      <div className="tracking-head">
-        <div>
-          <p className="eyebrow">ЗАКАЗ #{order.orderNumber}</p>
-          <h1><span>{currentMeta.icon}</span> {publicLabel}</h1>
-          <p>{order.status === "completed" ? "Спасибо за заказ!" : order.status === "cancelled" ? "Заказ отменён. Для уточнения свяжитесь с нами." : "Статус обновляется автоматически."}</p>
-        </div>
-        <div className="tracking-eta"><small>Ожидаемое время</small><strong>{expected}</strong></div>
-      </div>
-      {state === "reconnecting" && <div className="tracking-reconnect" role="status">Связь восстанавливается. На экране показан последний подтверждённый статус.</div>}
-      {order.status !== "cancelled" && (
-        <ol className="order-timeline">
-          {stages.map((stage, index) => {
-            const complete = Boolean(order[stage.timestamp]) || (currentIndex >= 0 && index < currentIndex);
-            const current = stage.status === publicStatus;
-            return <li key={stage.status} className={current ? "current" : complete ? "complete" : "pending"}><i>{complete || current ? "✓" : ""}</i><span>{stage.label}</span></li>;
-          })}
-        </ol>
-      )}
-      <div className="tracking-grid">
-        <article className="tracking-items">
-          <h2>Ваш заказ</h2>
-          {order.items.map((item, index) => (
-            <div className="tracking-item" key={`${item.name}-${index}`}>
-              <div><strong>{item.name}</strong><small>{[item.quantityLabel || item.quantity, item.option, item.addons.map((addon) => addon.name).join(", ")].filter(Boolean).join(" · ")}</small></div>
-              <strong>{money(item.total)}</strong>
+    <div className={`order-status-shell home-shell status-${order.status}`}>
+      {header}
+      <main>
+        <section className="order-status-hero" aria-labelledby="order-status-title">
+          <img src="/assets/home-hero-cinematic.webp" alt="" width="1792" height="1024" fetchPriority="high" decoding="async" />
+          <div className="order-status-hero-overlay" />
+          <div className="order-status-container order-status-hero-copy">
+            <p className="order-status-eyebrow"><Flame aria-hidden="true" /> Статус заказа</p>
+            <h1 id="order-status-title">{hero.title}<strong>{hero.accent}</strong></h1>
+            <p>{hero.lead}</p>
+            <span className="order-status-handwrite" aria-hidden="true">Готовим<br />с любовью!</span>
+          </div>
+        </section>
+
+        {state === "reconnecting" && <div className="order-status-offline order-status-container" role="status"><CircleAlert aria-hidden="true" /> Связь восстанавливается. Показан последний подтверждённый статус.</div>}
+
+        <section className="order-status-tracker order-status-container" aria-label="Ход выполнения заказа" aria-live="polite">
+          <div className="order-status-number">Заказ #{order.orderNumber}</div>
+          {order.status === "cancelled" ? <div className="order-status-cancelled"><CircleAlert aria-hidden="true" /><span><strong>Заказ отменён</strong><small>Свяжитесь с нами, если нужна помощь.</small></span></div> : <ol>
+            {stages.map((stage, index) => {
+              const complete = index < currentIndex || order.status === "completed";
+              const current = index === currentIndex && order.status !== "completed";
+              return <li key={stage.key} className={current ? "current" : complete ? "complete" : "pending"}><i><OrderStageIcon kind={stage.kind} /></i><span><strong>{stage.label}</strong><small>{formatOrderTime(stage.timestamp)}</small></span></li>;
+            })}
+          </ol>}
+          <div className="order-status-current"><Clock3 aria-hidden="true" /><span><small>Текущий статус</small><strong>{statusMessage(order)}</strong><b>Обновлено {formatOrderTime(order.updatedAt)}</b></span></div>
+        </section>
+
+        <section className="order-status-details order-status-container" aria-label="Детали заказа">
+          <article className="order-status-card order-status-items">
+            <h2><Package aria-hidden="true" /> Состав заказа</h2>
+            <div className="order-status-item-list">
+              {order.items.map((item, index) => <div className="order-status-item" key={`${item.productId}-${index}`}><img src={item.imageUrl || "/assets/placeholder.svg"} alt="" width="112" height="82" loading="eager" decoding="async" /><div><strong>{item.name}</strong><small>{[item.quantityLabel || `${item.quantity} шт.`, item.option, item.addons.map((addon) => addon.name).join(", ")].filter(Boolean).join(" · ")}</small></div><b>{money(item.total)}</b></div>)}
             </div>
-          ))}
-          <div className="tracking-total"><span>Итого</span><strong>{money(order.total)}</strong></div>
-        </article>
-        <aside className="tracking-fulfillment">
-          <small>Способ получения</small>
-          <strong>{order.fulfillmentType === "pickup" ? "Самовывоз" : "Доставка"}</strong>
-          {order.pickupPointName && <p>{order.pickupPointName}</p>}
-        </aside>
-      </div>
-      {(order.status === "completed" || order.status === "cancelled") && <Link className="button primary tracking-repeat" to="/menu">ЗАКАЗАТЬ ЕЩЁ →</Link>}
-    </section>
+            {order.deliveryPrice > 0 && <div className="order-status-price-row"><span>Доставка</span><b>{money(order.deliveryPrice)}</b></div>}
+            <div className="order-status-total"><span>Итого</span><strong>{money(order.total)}</strong></div>
+          </article>
+
+          <article className="order-status-card order-status-delivery">
+            <h2>{order.fulfillmentType === "delivery" ? <Bike aria-hidden="true" /> : <Store aria-hidden="true" />} {order.fulfillmentType === "delivery" ? "Доставка" : "Самовывоз"}</h2>
+            <dl>
+              <div><dt>Способ получения</dt><dd>{order.fulfillmentType === "delivery" ? "Доставка" : "Самовывоз"}</dd></div>
+              {order.fulfillmentType === "delivery" ? <><div><dt>Адрес</dt><dd><MapPin aria-hidden="true" /> {order.address || "Адрес не указан"}</dd></div>{apartmentDetails && <div><dt>Детали адреса</dt><dd>{apartmentDetails}</dd></div>}</> : <div><dt>Точка выдачи</dt><dd><MapPin aria-hidden="true" /> {order.pickupPointName || "Выбранный киоск"}</dd></div>}
+              {order.comment && <div><dt>Комментарий</dt><dd>{order.comment}</dd></div>}
+              <div><dt>Оплата</dt><dd><WalletCards aria-hidden="true" /> {paymentMethodText(order.paymentMethod)}</dd></div>
+            </dl>
+          </article>
+
+          <article className="order-status-card order-status-handoff">
+            <h2>{order.fulfillmentType === "delivery" ? <UserRound aria-hidden="true" /> : <ShoppingBag aria-hidden="true" />} {order.fulfillmentType === "delivery" ? "Курьер" : "Получение"}</h2>
+            <div><strong>{order.fulfillmentType === "pickup" ? (order.status === "ready" ? "Заказ можно забирать" : "Выдача в выбранном киоске") : order.status === "delivering" ? "Заказ передан курьеру" : order.status === "completed" ? "Доставка завершена" : "Курьер будет назначен после приготовления"}</strong><p>Здесь отображаются только подтверждённые данные заказа — без вымышленных имён и геопозиции.</p></div>
+            <Flame className="order-status-handoff-mark" aria-hidden="true" />
+          </article>
+        </section>
+
+        <section className="order-status-support order-status-container" aria-label="Помощь по заказу">
+          <div><span><Phone aria-hidden="true" /></span><p><strong>Есть вопросы по заказу?</strong><small>Свяжитесь с нами — поможем в любой ситуации.</small></p></div>
+          <a href={phoneHref(supportPhone)}><Phone aria-hidden="true" /> {supportPhone} <ArrowRight aria-hidden="true" /></a>
+          <a className="telegram" href="https://t.me/iamartush1an" target="_blank" rel="noreferrer"><Send aria-hidden="true" /> Написать в Telegram <ArrowRight aria-hidden="true" /></a>
+        </section>
+
+        {order.status === "completed" && <section className="order-status-after order-status-container">
+          <article className="order-status-thanks"><Flame aria-hidden="true" /><div><p>Спасибо, что выбираете</p><strong>Шашлык Лайк!</strong></div></article>
+          <article className="order-status-review">
+            <h2>Оцените заказ</h2>
+            {order.review ? <div className="order-status-review-sent"><div aria-label={`Оценка ${order.review.rating} из 5`}>{[1, 2, 3, 4, 5].map((value) => <Star key={value} fill={value <= order.review!.rating ? "currentColor" : "none"} />)}</div><strong>Спасибо за отзыв!</strong>{order.review.comment && <p>{order.review.comment}</p>}</div> : order.canReview ? <form onSubmit={submitReview}><div className="order-status-stars" role="group" aria-label="Оценка заказа">{[1, 2, 3, 4, 5].map((value) => <button type="button" key={value} className={value <= rating ? "active" : ""} onClick={() => setRating(value)} aria-label={`${value} из 5`} aria-pressed={value === rating}><Star fill={value <= rating ? "currentColor" : "none"} /></button>)}</div><textarea value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} maxLength={500} placeholder="Поделитесь впечатлениями о блюдах и сервисе" aria-label="Комментарий к заказу" /><button className="order-status-review-submit" disabled={rating < 1 || reviewState === "sending"}>{reviewState === "sending" ? "Отправляем…" : "Отправить отзыв"}</button>{reviewError && <p className="order-status-review-error" role="alert">{reviewError}</p>}</form> : <p>Отзыв станет доступен после завершения заказа.</p>}
+          </article>
+        </section>}
+
+        <div className="order-status-repeat order-status-container"><Link to="/menu">Заказать ещё <ArrowRight aria-hidden="true" /></Link></div>
+      </main>
+    </div>
   );
 }
 
@@ -1461,9 +1633,10 @@ type DeliveryProps = {
   cartCount: number;
   cartTotal: number;
   onCartOpen: () => void;
+  activeOrder: TrackingOrder | null;
 };
 
-function Delivery({ data, cartCount, cartTotal, onCartOpen }: DeliveryProps) {
+function Delivery({ data, cartCount, cartTotal, onCartOpen, activeOrder }: DeliveryProps) {
   const { settings } = data;
   const location = useLocation();
   const kioskRailRef = useRef<HTMLDivElement>(null);
@@ -1523,7 +1696,7 @@ function Delivery({ data, cartCount, cartTotal, onCartOpen }: DeliveryProps) {
 
   return (
     <div className="delivery-page">
-      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/delivery" />
+      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/delivery" activeOrder={activeOrder} />
       <main>
         <section className="delivery-cinematic" aria-labelledby="delivery-title">
           <div className="delivery-cinematic-media" aria-hidden="true">
@@ -1604,9 +1777,10 @@ type AboutProps = {
   cartCount: number;
   cartTotal: number;
   onCartOpen: () => void;
+  activeOrder: TrackingOrder | null;
 };
 
-function About({ settings, cartCount, cartTotal, onCartOpen }: AboutProps) {
+function About({ settings, cartCount, cartTotal, onCartOpen, activeOrder }: AboutProps) {
   const benefits = [
     {
       title: "Качество",
@@ -1640,7 +1814,7 @@ function About({ settings, cartCount, cartTotal, onCartOpen }: AboutProps) {
 
   return (
     <div className="about-page">
-      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/about" />
+      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/about" activeOrder={activeOrder} />
       <div className="about-content">
         <section className="about-cinematic" aria-labelledby="about-title">
           <div className="about-cinematic-media" aria-hidden="true">
@@ -1691,9 +1865,10 @@ type ContactsProps = {
   cartCount: number;
   cartTotal: number;
   onCartOpen: () => void;
+  activeOrder: TrackingOrder | null;
 };
 
-function Contacts({ data, cartCount, cartTotal, onCartOpen }: ContactsProps) {
+function Contacts({ data, cartCount, cartTotal, onCartOpen, activeOrder }: ContactsProps) {
   const { settings } = data;
   const points = data.pickupPoints.filter((point) => point.isActive);
   const pickupPoint = points.find((point) => point.address.toLocaleLowerCase("ru-RU").includes("бульвар победы")) || points[0];
@@ -1709,7 +1884,7 @@ function Contacts({ data, cartCount, cartTotal, onCartOpen }: ContactsProps) {
 
   return (
     <div className="contacts-page">
-      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/contacts" />
+      <HomeHeader settings={settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/contacts" activeOrder={activeOrder} />
       <main>
         <section className="contacts-hero" aria-labelledby="contacts-title">
           <div className="contacts-hero-media" aria-hidden="true"><img src="/assets/home-kiosk-evening.webp" alt="" width="1792" height="1024" fetchPriority="high" decoding="async" /></div>
@@ -1797,6 +1972,9 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
   const [admin, setAdmin] = useState<AdminBootstrap | null>(null);
   const [tab, setTab] = useState("dashboard");
   const [busy, setBusy] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [success, setSuccess] = useState("");
 
   async function load(nextToken = token) {
     try {
@@ -1849,6 +2027,7 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
 
   async function authorized(url: string, init: RequestInit = {}) {
     setError("");
+    setSuccess("");
     try {
       const response = await apiFetch(url, { ...init, headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...(init.headers || {}) } });
       if (!response.ok) {
@@ -1859,9 +2038,25 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
       }
       await load();
       onChanged();
+      setSuccess("Изменения сохранены");
+      window.setTimeout(() => setSuccess(""), 2600);
     } catch {
       setError("Изменения не сохранены: нет связи с сервером.");
     }
+  }
+
+  async function uploadImage(file: File) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 5 * 1024 * 1024) throw new Error("Используйте PNG, JPG или WebP до 5 МБ");
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Не удалось прочитать изображение"));
+      reader.readAsDataURL(file);
+    });
+    const response = await apiFetch("/api/admin/uploads", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ dataUrl }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Не удалось загрузить изображение");
+    return String(payload.url);
   }
 
   function logout() {
@@ -1876,7 +2071,7 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
         <div className="admin-login-theme"><ThemeToggle mode={themeMode} activeTheme={activeTheme} onChange={onThemeMode} /></div>
         <form onSubmit={login}>
           <div className="admin-login-brand">
-            <img src="/assets/logo.png" alt="" />
+            <span className="admin-flame-mark"><Flame aria-hidden="true" /></span>
             <span>Шашлык Лайк</span>
           </div>
           <h1>АДМИН-ПАНЕЛЬ</h1>
@@ -1897,12 +2092,15 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
   }
 
   const tabs = [
-    ["dashboard", "Панель", "▦"],
+    ["dashboard", "Главная", "⌂"],
+    ["orders", "Заказы", "▣"],
+    ["products", "Меню / Товары", "▦"],
+    ["categories", "Категории", "◫"],
+    ["addons", "Дополнения", "+"],
+    ["pickup", "Киоски", "⌂"],
+    ["clients", "Клиенты", "♡"],
+    ["users", "Сотрудники", "◎"],
     ["analytics", "Аналитика", "↗"],
-    ["orders", "Заказы", "✓"],
-    ["products", "Товары", "□"],
-    ["users", "Люди", "◌"],
-    ["pickup", "Точки", "⌖"],
     ["profile", "Профиль", "◉"],
     ["settings", "Настройки", "⚙"]
   ].filter(([id]) => (id !== "settings" || can(admin, "settings.manage")) && (id !== "analytics" || can(admin, "analytics.basic")));
@@ -1910,7 +2108,10 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
 
   return (
     <section className="admin admin-shell">
-      <aside className="admin-nav">
+      {navOpen && <button className="admin-nav-backdrop" aria-label="Закрыть меню" onClick={() => setNavOpen(false)} />}
+      <aside className={`admin-nav ${navOpen ? "open" : ""}`} aria-label="Разделы админ-панели">
+        <button className="admin-nav-close" type="button" aria-label="Закрыть меню" onClick={() => setNavOpen(false)}>×</button>
+        <div className="admin-product-brand"><span className="admin-flame-mark"><Flame aria-hidden="true" /></span><span><strong>ШАШЛЫК <b>ЛАЙК</b></strong><small>Админ-панель</small></span></div>
         <div className="admin-nav-brand employee-brand">
           <div className="admin-avatar small">{admin.currentUser.avatarUrl ? <img src={admin.currentUser.avatarUrl} alt="" /> : <span>{currentName.slice(0, 1)}</span>}</div>
           <span>
@@ -1920,7 +2121,7 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
         </div>
         <div className="admin-nav-list">
           {tabs.map(([id, label, icon]) => (
-            <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+            <button key={id} className={tab === id ? "active" : ""} onClick={() => { setTab(id); setNavOpen(false); setQuery(""); }}>
               <span>{icon}</span>
               {label}
             </button>
@@ -1930,37 +2131,51 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
       </aside>
       <div className="admin-work">
         <div className="admin-topbar">
-          <div>
-            <p>Добро пожаловать</p>
-            <h1>{currentName}</h1>
-          </div>
+          <button className="admin-mobile-menu" type="button" aria-label="Открыть меню" onClick={() => setNavOpen(true)}>☰</button>
+          <label className="admin-search"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Поиск в текущем разделе..." aria-label="Поиск" /></label>
           <div className="admin-top-actions">
             <ThemeToggle mode={themeMode} activeTheme={activeTheme} onChange={onThemeMode} />
+            <span className="admin-clock">{new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date())}</span>
             <div className="admin-avatar">{admin.currentUser.avatarUrl ? <img src={admin.currentUser.avatarUrl} alt="" /> : <span>{currentName.slice(0, 1)}</span>}</div>
           </div>
         </div>
         {error && <p className="form-error admin-error">{error}</p>}
+        {success && <p className="admin-success" role="status">{success}</p>}
         {tab === "dashboard" && <AdminDashboard admin={admin} />}
         {tab === "analytics" && <AdminAnalytics admin={admin} />}
-        {tab === "orders" && <AdminOrders admin={admin} save={authorized} />}
-        {tab === "products" && <AdminProducts admin={admin} save={authorized} />}
-        {tab === "users" && <AdminUsers admin={admin} save={authorized} />}
-        {tab === "pickup" && <AdminPickup admin={admin} save={authorized} />}
-        {tab === "profile" && <AdminProfile admin={admin} save={authorized} />}
+        {tab === "orders" && <AdminOrders admin={admin} save={authorized} query={query} />}
+        {tab === "products" && <AdminProducts admin={admin} save={authorized} uploadImage={uploadImage} query={query} />}
+        {tab === "categories" && <AdminCategories admin={admin} save={authorized} query={query} />}
+        {tab === "addons" && <AdminAddons admin={admin} save={authorized} uploadImage={uploadImage} query={query} />}
+        {tab === "pickup" && <AdminPickup admin={admin} save={authorized} uploadImage={uploadImage} query={query} />}
+        {tab === "clients" && <AdminClients admin={admin} query={query} />}
+        {tab === "users" && <AdminUsers admin={admin} save={authorized} uploadImage={uploadImage} query={query} />}
+        {tab === "profile" && <AdminProfile admin={admin} save={authorized} uploadImage={uploadImage} />}
         {tab === "settings" && <AdminSettings admin={admin} save={authorized} />}
       </div>
     </section>
   );
 }
 
-function AdminProfile({ admin, save }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void> }) {
+function AdminProfile({ admin, save, uploadImage }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void>; uploadImage: (file: File) => Promise<string> }) {
   const [profile, setProfile] = useState(admin.currentUser);
+  const [uploadError, setUploadError] = useState("");
 
   useEffect(() => setProfile(admin.currentUser), [admin.currentUser.id, admin.currentUser.updatedAt]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     await save(`/api/admin/users/${admin.currentUser.id}`, { method: "PUT", body: JSON.stringify(profile) });
+  }
+
+  async function setProfileImage(file: File) {
+    try {
+      setUploadError("");
+      const avatarUrl = await uploadImage(file);
+      setProfile((current) => ({ ...current, avatarUrl }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Ошибка загрузки");
+    }
   }
 
   return (
@@ -1971,9 +2186,10 @@ function AdminProfile({ admin, save }: { admin: AdminBootstrap; save: (url: stri
           <div className="admin-avatar profile-photo">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <span>{userName(profile).slice(0, 1)}</span>}</div>
           <label className="file-field">
             Фото профиля
-            <input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && readImageAsDataUrl(event.target.files[0], (avatarUrl) => setProfile({ ...profile, avatarUrl }))} />
+            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && void setProfileImage(event.target.files[0])} />
           </label>
         </div>
+        {uploadError && <p className="form-error">{uploadError}</p>}
         <div className="two-fields">
           <input value={profile.firstName} onChange={(event) => setProfile({ ...profile, firstName: event.target.value })} placeholder="Имя" required />
           <input value={profile.lastName} onChange={(event) => setProfile({ ...profile, lastName: event.target.value })} placeholder="Фамилия" required />
@@ -2008,10 +2224,7 @@ function AdminDashboard({ admin }: { admin: AdminBootstrap }) {
 
   return (
     <div className="admin-dashboard">
-      <div className="admin-section-title">
-        <h2>Сегодня в смене</h2>
-        <p>Статистика строится только по реальным заказам из базы.</p>
-      </div>
+      <AdminSectionHero eyebrow="Добро пожаловать" title={userName(admin.currentUser).toUpperCase()} text="Здесь вы управляете заказами, меню, сотрудниками и всеми процессами заведения." />
       <div className="metric-grid">
         <Metric label="Заказы сегодня" value={todayOrders.length} />
         {can(admin, "analytics.basic") && <Metric label="Средний чек" value={money(avg)} />}
@@ -2039,6 +2252,10 @@ function AdminDashboard({ admin }: { admin: AdminBootstrap }) {
           <p>Финансовая статистика скрыта для этой роли.</p>
         </article>
       )}
+      <div className="admin-dashboard-grid">
+        <section className="admin-dashboard-orders"><div className="admin-section-title compact"><h3>Последние заказы</h3><p>Только реальные записи из базы</p></div><div className="admin-table order-table dashboard-order-table">{admin.orders.slice(0, 6).map((order) => <article key={order.id}><div><strong>#{order.orderNumber}</strong><p>{order.customerName} · {order.items.map((item) => item.name).join(", ")}</p></div><b>{money(order.total)}</b><span className={`status-pill status-${order.status}`}>{admin.orderStatusLabels[order.status]}</span></article>)}{!admin.orders.length && <AdminEmpty title="Заказов пока нет" text="Новые заказы появятся здесь автоматически." />}</div></section>
+        <aside className="admin-status-summary"><div className="admin-section-title compact"><h3>Статусы сегодня</h3></div><div className="admin-status-ring"><strong>{todayOrders.length}</strong><span>всего</span></div><ul>{admin.orderStatuses.map((status) => <li key={status}><span>{admin.orderStatusLabels[status]}</span><b>{todayOrders.filter((order) => order.status === status).length}</b></li>)}</ul></aside>
+      </div>
     </div>
   );
 }
@@ -2085,43 +2302,66 @@ function Metric({ label, value, highlight = false }: { label: string; value: str
   );
 }
 
-function AdminOrders({ admin, save }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void> }) {
+function AdminOrders({ admin, save, query }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void>; query: string }) {
+  const [status, setStatus] = useState("all");
+  const [selected, setSelected] = useState<Order | null>(null);
+  const normalized = query.trim().toLowerCase();
+  const filtered = admin.orders.filter((order) => {
+    const matchesStatus = status === "all" || order.status === status;
+    const haystack = `${order.orderNumber} ${order.customerName} ${order.phone} ${order.address} ${order.items.map((item) => item.name).join(" ")}`.toLowerCase();
+    return matchesStatus && (!normalized || haystack.includes(normalized));
+  });
   return (
     <>
-      <div className="admin-section-title"><h2>Заказы</h2><p>Новые заказы выделены, Telegram-статус виден в карточке.</p></div>
+      <AdminSectionHero eyebrow="Управление заказами" title="ЗАКАЗЫ" text="Принимайте и контролируйте реальные заказы. Статусы синхронизируются с клиентской страницей." />
+      <div className="admin-filter-row" aria-label="Фильтр заказов">
+        <button className={status === "all" ? "active" : ""} onClick={() => setStatus("all")}>Все <b>{admin.orders.length}</b></button>
+        {admin.orderStatuses.map((item) => <button key={item} className={status === item ? "active" : ""} onClick={() => setStatus(item)}>{admin.orderStatusLabels[item]} <b>{admin.orders.filter((order) => order.status === item).length}</b></button>)}
+      </div>
       <div className="admin-table order-table">
-        {admin.orders.map((order) => (
-          <article key={order.id} className={order.status === "new" ? "is-new" : ""}>
+        {!filtered.length && <AdminEmpty title="Заказов не найдено" text="Измените фильтр или поисковый запрос." />}
+        {filtered.map((order) => (
+          <article key={order.id} className={order.status === "new" ? "is-new" : ""} onClick={() => setSelected(order)}>
             <div>
               <strong>#{order.orderNumber}</strong>
-              <p>{order.customerName} · {order.phone}</p>
+              <p>{new Date(order.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {order.customerName}</p>
+              <p>{order.phone} · {order.deliveryType === "pickup" ? "Самовывоз" : "Доставка"}</p>
               <p>{order.items.map((item) => `${item.name} · ${item.quantityLabel || item.quantity}`).join(", ")}</p>
-              {order.telegram && <small>Telegram: {order.telegram.sent ? "отправлено" : order.telegram.reason || "не отправлено"}</small>}
+              {order.telegram && <small>Telegram: {order.telegram.sent ? "отправлено" : telegramReasonText(order.telegram.reason)}</small>}
             </div>
             {can(admin, "analytics.financial") && <strong>{money(order.total)}</strong>}
-            <select value={order.status} disabled={!can(admin, "orders.change_status") || !order.availableTransitions.length} onChange={(event) => save(`/api/admin/orders/${order.id}`, { method: "PUT", body: JSON.stringify({ status: event.target.value, expectedStatus: order.status }) })}>
+            <select aria-label={`Статус заказа ${order.orderNumber}`} value={order.status} disabled={!can(admin, "orders.change_status") || !order.availableTransitions.length} onClick={(event) => event.stopPropagation()} onChange={(event) => save(`/api/admin/orders/${order.id}`, { method: "PUT", body: JSON.stringify({ status: event.target.value, expectedStatus: order.status }) })}>
               <option value={order.status}>{orderStatusMeta[order.status].label}</option>
               {order.availableTransitions.map((status) => <option key={status} value={status}>{orderStatusMeta[status].label}</option>)}
             </select>
+            <button type="button" onClick={(event) => { event.stopPropagation(); setSelected(order); }}>Открыть</button>
           </article>
         ))}
       </div>
+      {selected && (
+        <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label={`Заказ ${selected.orderNumber}`}>
+          <button className="admin-editor-backdrop" aria-label="Закрыть" onClick={() => setSelected(null)} />
+          <aside className="admin-editor order-editor">
+            <button className="admin-editor-close" type="button" onClick={() => setSelected(null)} aria-label="Закрыть">×</button>
+            <div className="admin-section-title compact"><h3>#{selected.orderNumber}</h3><p>{new Date(selected.createdAt).toLocaleString("ru-RU")}</p></div>
+            <span className={`status-pill status-${selected.status}`}>{admin.orderStatusLabels[selected.status]}</span>
+            <section><h4>Клиент</h4><p><b>{selected.customerName}</b><br /><a href={`tel:${selected.phone}`}>{selected.phone}</a></p></section>
+            <section><h4>Состав заказа</h4>{selected.items.map((item, index) => <div className="order-detail-line" key={`${item.name}-${index}`}><span>{item.name}<small>{item.quantityLabel || `${item.quantity} ${item.unit}`}{item.option ? ` · ${item.option}` : ""}{item.addons.length ? ` · ${item.addons.map((addon) => addon.name).join(", ")}` : ""}</small></span><b>{money(item.total)}</b></div>)}<div className="order-detail-total"><span>Итого</span><b>{money(selected.total)}</b></div></section>
+            <section><h4>{selected.deliveryType === "pickup" ? "Самовывоз" : "Доставка"}</h4><p>{selected.deliveryType === "pickup" ? selected.pickupPointName || "Точка не указана" : selected.address || "Адрес не указан"}</p>{selected.deliveryType === "delivery" && <p className="muted">Подъезд {selected.entrance || "—"} · этаж {selected.floor || "—"} · квартира {selected.apartment || "—"} · домофон {selected.intercom || "—"}</p>}{selected.comment && <p>Комментарий: {selected.comment}</p>}<p>Оплата: {paymentMethodText(selected.paymentMethod)}</p></section>
+            <section><h4>История статусов</h4><ol className="admin-history">{admin.orderStatusHistory.filter((entry) => entry.orderId === selected.id).map((entry) => <li key={entry.id}><span>{admin.orderStatusLabels[entry.toStatus]}</span><small>{new Date(entry.changedAt).toLocaleString("ru-RU")} · {entry.source === "telegram" ? "Telegram" : entry.source === "admin" ? "Админка" : "Система"}</small></li>)}</ol></section>
+          </aside>
+        </div>
+      )}
     </>
   );
 }
 
-function AdminProducts({ admin, save }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void> }) {
+function AdminProducts({ admin, save, uploadImage, query }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void>; uploadImage: (file: File) => Promise<string>; query: string }) {
   const blank: Product = { id: "", slug: "", name: "", description: "", price: 0, unit: "1 шт", step: 1, categoryId: admin.categories[0]?.id || "shashlik", imageUrl: "/assets/placeholder.svg", isActive: true, isAvailable: true, isFeatured: false, options: [], addonIds: [], sortOrder: 999 };
   const [editing, setEditing] = useState<Product>(blank);
-  const [newAddon, setNewAddon] = useState({ name: "", price: 50, group: "custom", isActive: true });
   const editable = can(admin, "products.edit");
-
-async function createAddon(event: FormEvent) {
-    event.preventDefault();
-    if (!newAddon.name.trim()) return;
-    await save("/api/admin/addons", { method: "POST", body: JSON.stringify(newAddon) });
-    setNewAddon({ name: "", price: 50, group: "custom", isActive: true });
-  }
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   function toggleProductAddon(addonId: string) {
     setEditing((current) => ({
@@ -2132,10 +2372,14 @@ async function createAddon(event: FormEvent) {
     }));
   }
 
-  function fileToDataUrl(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => setEditing((current) => ({ ...current, imageUrl: String(reader.result) }));
-    reader.readAsDataURL(file);
+  async function handleImage(file: File) {
+    setUploadError("");
+    try {
+      const imageUrl = await uploadImage(file);
+      setEditing((current) => ({ ...current, imageUrl }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Не удалось загрузить фото");
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -2144,13 +2388,21 @@ async function createAddon(event: FormEvent) {
     const isNew = !editing.id;
     await save(isNew ? "/api/admin/products" : `/api/admin/products/${editing.id}`, { method: isNew ? "POST" : "PUT", body: JSON.stringify(editing) });
     setEditing(blank);
+    setEditorOpen(false);
   }
+
+  const normalized = query.trim().toLowerCase();
+  const products = admin.products.filter((product) => !normalized || `${product.name} ${product.description} ${admin.categories.find((category) => category.id === product.categoryId)?.name || ""}`.toLowerCase().includes(normalized));
 
   return (
     <>
-      <div className="admin-section-title"><h2>Товары</h2><p>Доступность и хиты сразу отражаются на витрине.</p></div>
-      {editable && (
-        <form className="admin-form admin-card-form" onSubmit={submit}>
+      <AdminSectionHero eyebrow="Управление меню" title="МЕНЮ / ТОВАРЫ" text="Доступность, цены и хиты сразу отражаются на витрине." action={editable ? <button className="button primary" onClick={() => { setEditing(blank); setEditorOpen(true); }}><Plus size={18} /> Добавить товар</button> : undefined} />
+      {editable && editorOpen && (
+        <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label={editing.id ? "Редактирование товара" : "Добавление товара"}>
+          <button className="admin-editor-backdrop" aria-label="Закрыть" onClick={() => setEditorOpen(false)} />
+        <form className="admin-form admin-card-form admin-editor" onSubmit={submit}>
+          <button className="admin-editor-close" type="button" aria-label="Закрыть" onClick={() => setEditorOpen(false)}>×</button>
+          <div className="admin-section-title compact"><h3>{editing.id ? "Редактировать товар" : "Новый товар"}</h3><p>Все поля сохраняются на сервере.</p></div>
           <input value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} placeholder="Название" required />
           <input value={editing.slug} onChange={(event) => setEditing({ ...editing, slug: event.target.value })} placeholder="slug" />
           <textarea value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} placeholder="Описание" />
@@ -2170,35 +2422,27 @@ async function createAddon(event: FormEvent) {
             {!admin.addons.length && <p>Сначала добавьте дополнение ниже.</p>}
           </fieldset>
           <input value={editing.imageUrl} onChange={(event) => setEditing({ ...editing, imageUrl: event.target.value })} placeholder="URL фото" />
-          <input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && fileToDataUrl(event.target.files[0])} />
+          {editing.imageUrl && <img className="admin-image-preview" src={editing.imageUrl} alt="Превью товара" />}
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && void handleImage(event.target.files[0])} />
+          {uploadError && <p className="form-error">{uploadError}</p>}
           <div className="switches">
             <label><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} /> Активен</label>
             <label><input type="checkbox" checked={editing.isAvailable} onChange={(event) => setEditing({ ...editing, isAvailable: event.target.checked })} /> В наличии</label>
             <label><input type="checkbox" checked={editing.isFeatured} onChange={(event) => setEditing({ ...editing, isFeatured: event.target.checked })} /> Хит</label>
           </div>
           <button className="button primary">{editing.id ? "Сохранить" : "Создать"}</button>
+          {editing.id && <button className="button danger" type="button" onClick={async () => { if (window.confirm(`Удалить «${editing.name}»? История заказов сохранится.`)) { await save(`/api/admin/products/${editing.id}`, { method: "DELETE" }); setEditorOpen(false); setEditing(blank); } }}>Удалить товар</button>}
         </form>
-      )}
-{editable && (
-        <form className="admin-form admin-card-form addon-create-form" onSubmit={createAddon}>
-          <div className="admin-section-title compact"><h3>Дополнения</h3><p>Создайте галочку, затем назначьте её нужным товарам выше.</p></div>
-          <input value={newAddon.name} onChange={(event) => setNewAddon({ ...newAddon, name: event.target.value })} placeholder="Название дополнения" required />
-          <input type="number" min="0" value={newAddon.price} onChange={(event) => setNewAddon({ ...newAddon, price: Number(event.target.value) })} placeholder="Цена" />
-          <button className="button primary">Добавить дополнение</button>
-          <div className="admin-addon-list">
-            {admin.addons.map((addon) => (
-              <AdminAddonRow key={addon.id} addon={addon} save={save} />
-            ))}
-          </div>
-        </form>
+        </div>
       )}
       <div className="admin-table product-admin-table">
-        {admin.products.map((product) => (
+        {!products.length && <AdminEmpty title="Товары не найдены" text="Добавьте первый товар или измените поиск." />}
+        {products.map((product) => (
           <article key={product.id}>
             <img src={product.imageUrl} alt="" />
             <div><strong>{product.name}</strong><p>{money(product.price)} / {product.unit}</p></div>
             <span className={product.isAvailable ? "status-pill ok" : "status-pill stop"}>{product.isAvailable ? "В наличии" : "Стоп"}</span>
-            {editable && <button onClick={() => setEditing(product)}>Редактировать</button>}
+            {editable && <button onClick={() => { setEditing(product); setEditorOpen(true); }}>Редактировать</button>}
           </article>
         ))}
       </div>
@@ -2220,18 +2464,87 @@ function AdminAddonRow({ addon, save }: { addon: Addon; save: (url: string, init
   );
 }
 
-function AdminUsers({ admin, save }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void> }) {
+function AdminCategories({ admin, save, query }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void>; query: string }) {
+  const blank: Category = { id: "", name: "", minPrice: "", sortOrder: admin.categories.length + 1, isActive: true };
+  const [editing, setEditing] = useState<Category | null>(null);
+  const editable = can(admin, "products.edit");
+  const normalized = query.trim().toLowerCase();
+  const categories = admin.categories.filter((category) => !normalized || category.name.toLowerCase().includes(normalized));
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+    await save(editing.id ? `/api/admin/categories/${editing.id}` : "/api/admin/categories", { method: editing.id ? "PUT" : "POST", body: JSON.stringify(editing) });
+    setEditing(null);
+  }
+  return <>
+    <AdminSectionHero eyebrow="Управление меню" title="КАТЕГОРИИ" text="Создавайте, сортируйте и отключайте разделы каталога." action={editable ? <button className="button primary" onClick={() => setEditing(blank)}><Plus size={18} /> Добавить категорию</button> : undefined} />
+    <div className="admin-table category-admin-table">
+      {!categories.length && <AdminEmpty title="Категорий пока нет" text="Создайте категорию, чтобы организовать меню." />}
+      {categories.sort((a, b) => a.sortOrder - b.sortOrder).map((category) => <article key={category.id}>
+        <b className="admin-sort-index">{category.sortOrder}</b>
+        <div><strong>{category.name}</strong><p>{category.minPrice || "Подпись цены не задана"}</p></div>
+        <span>{admin.products.filter((product) => product.categoryId === category.id).length} товаров</span>
+        <span className={category.isActive === false ? "status-pill stop" : "status-pill ok"}>{category.isActive === false ? "Отключена" : "Активна"}</span>
+        {editable && <button onClick={() => setEditing(category)}>Редактировать</button>}
+      </article>)}
+    </div>
+    {editing && <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label="Редактор категории"><button className="admin-editor-backdrop" onClick={() => setEditing(null)} aria-label="Закрыть" /><form className="admin-form admin-card-form admin-editor" onSubmit={submit}><button className="admin-editor-close" type="button" onClick={() => setEditing(null)} aria-label="Закрыть">×</button><div className="admin-section-title compact"><h3>{editing.id ? "Редактировать категорию" : "Новая категория"}</h3></div><label>Название<input required value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label><label>Подпись цены<input value={editing.minPrice} onChange={(event) => setEditing({ ...editing, minPrice: event.target.value })} placeholder="Например, от 320 ₽" /></label><label>Порядок<input type="number" min="0" value={editing.sortOrder} onChange={(event) => setEditing({ ...editing, sortOrder: Number(event.target.value) })} /></label><label className="admin-toggle"><input type="checkbox" checked={editing.isActive !== false} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} /> Активна</label><button className="button primary">Сохранить</button>{editing.id && <button type="button" className="button danger" onClick={async () => { if (window.confirm(`Удалить категорию «${editing.name}»?`)) { await save(`/api/admin/categories/${editing.id}`, { method: "DELETE" }); setEditing(null); } }}>Удалить категорию</button>}</form></div>}
+  </>;
+}
+
+function AdminAddons({ admin, save, uploadImage, query }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void>; uploadImage: (file: File) => Promise<string>; query: string }) {
+  const blank: Addon = { id: "", name: "", price: 0, group: "Соусы", description: "", imageUrl: "", isCustomerVisible: true, sortOrder: admin.addons.length + 1, isActive: true };
+  const [editing, setEditing] = useState<Addon | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const editable = can(admin, "products.edit");
+  const normalized = query.trim().toLowerCase();
+  const addons = admin.addons.filter((addon) => !normalized || `${addon.name} ${addon.group}`.toLowerCase().includes(normalized));
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+    await save(editing.id ? `/api/admin/addons/${editing.id}` : "/api/admin/addons", { method: editing.id ? "PUT" : "POST", body: JSON.stringify(editing) });
+    setEditing(null);
+  }
+  async function setImage(file: File) { try { setUploadError(""); const imageUrl = await uploadImage(file); setEditing((current) => current ? { ...current, imageUrl } : current); } catch (error) { setUploadError(error instanceof Error ? error.message : "Ошибка загрузки"); } }
+  return <>
+    <AdminSectionHero eyebrow="Управление меню" title="ДОПОЛНЕНИЯ" text="Соусы, добавки и другие опции, доступные выбранным товарам." action={editable ? <button className="button primary" onClick={() => setEditing(blank)}><Plus size={18} /> Добавить дополнение</button> : undefined} />
+    <div className="admin-table addon-admin-table">{!addons.length && <AdminEmpty title="Дополнений пока нет" text="Создайте первое дополнение и назначьте его товарам." />}{addons.map((addon) => <article key={addon.id}>{addon.imageUrl ? <img src={addon.imageUrl} alt="" /> : <div className="admin-image-fallback">+</div>}<div><strong>{addon.name}</strong><p>{addon.group}</p><small>Используется в {admin.products.filter((product) => product.addonIds?.includes(addon.id)).length} товарах</small></div><b>{money(addon.price)}</b><span className={addon.isActive ? "status-pill ok" : "status-pill stop"}>{addon.isActive ? "Активно" : "Отключено"}</span>{editable && <button onClick={() => setEditing(addon)}>Редактировать</button>}</article>)}</div>
+    {editing && <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label="Редактор дополнения"><button className="admin-editor-backdrop" onClick={() => setEditing(null)} aria-label="Закрыть" /><form className="admin-form admin-card-form admin-editor" onSubmit={submit}><button className="admin-editor-close" type="button" onClick={() => setEditing(null)} aria-label="Закрыть">×</button><div className="admin-section-title compact"><h3>{editing.id ? "Редактировать дополнение" : "Новое дополнение"}</h3></div>{editing.imageUrl && <img className="admin-image-preview" src={editing.imageUrl} alt="" />}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && void setImage(event.target.files[0])} />{uploadError && <p className="form-error">{uploadError}</p>}<label>Название<input required value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label><div className="two-fields"><label>Группа<input value={editing.group} onChange={(event) => setEditing({ ...editing, group: event.target.value })} /></label><label>Цена<input type="number" min="0" value={editing.price} onChange={(event) => setEditing({ ...editing, price: Number(event.target.value) })} /></label></div><label>Описание<textarea value={editing.description || ""} onChange={(event) => setEditing({ ...editing, description: event.target.value })} /></label><label>Порядок<input type="number" min="0" value={editing.sortOrder || 0} onChange={(event) => setEditing({ ...editing, sortOrder: Number(event.target.value) })} /></label><div className="switches"><label><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} /> Активно</label><label><input type="checkbox" checked={editing.isCustomerVisible !== false} onChange={(event) => setEditing({ ...editing, isCustomerVisible: event.target.checked })} /> Видно клиенту</label></div><button className="button primary">Сохранить</button>{editing.id && <button className="button danger" type="button" onClick={async () => { if (window.confirm(`Удалить «${editing.name}»? Связи с товарами будут сняты.`)) { await save(`/api/admin/addons/${editing.id}`, { method: "DELETE" }); setEditing(null); } }}>Удалить</button>}</form></div>}
+  </>;
+}
+
+function AdminClients({ admin, query }: { admin: AdminBootstrap; query: string }) {
+  const clients = useMemo(() => {
+    const byPhone = new Map<string, { name: string; phone: string; orders: Order[]; total: number; lastAt: string }>();
+    admin.orders.forEach((order) => {
+      const key = order.phone.replace(/\D/g, "") || order.customerName.toLowerCase();
+      const item = byPhone.get(key) || { name: order.customerName, phone: order.phone, orders: [], total: 0, lastAt: order.createdAt };
+      item.orders.push(order); item.total += order.status === "cancelled" ? 0 : order.total; if (order.createdAt > item.lastAt) item.lastAt = order.createdAt; byPhone.set(key, item);
+    });
+    return [...byPhone.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  }, [admin.orders]);
+  const normalized = query.trim().toLowerCase();
+  const filtered = clients.filter((client) => !normalized || `${client.name} ${client.phone}`.toLowerCase().includes(normalized));
+  return <><AdminSectionHero eyebrow="История заказов" title="КЛИЕНТЫ" text="Справочник формируется автоматически из реальных заказов и не хранит лишних данных." /><div className="admin-table client-admin-table">{!filtered.length && <AdminEmpty title="Клиентов пока нет" text="Они появятся здесь после первого заказа." />}{filtered.map((client) => <article key={client.phone}><div className="admin-avatar"><span>{client.name.slice(0, 1)}</span></div><div><strong>{client.name}</strong><p><a href={`tel:${client.phone}`}>{client.phone}</a></p><small>Последний заказ: {new Date(client.lastAt).toLocaleDateString("ru-RU")}</small></div><span>{client.orders.length} заказов</span>{can(admin, "analytics.financial") && <b>{money(client.total)}</b>}</article>)}</div></>;
+}
+
+function AdminUsers({ admin, save, uploadImage, query }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void>; uploadImage: (file: File) => Promise<string>; query: string }) {
   const blankUser = { login: "", password: "", firstName: "", lastName: "", displayName: "", role: "EMPLOYEE" as UserRole, position: "Сотрудник", avatarUrl: "", phone: "", workPointId: "", shiftType: "DAY" as ShiftType, telegramLinkCode: "", isActive: true };
   const [user, setUser] = useState(blankUser);
+  const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [editDraft, setEditDraft] = useState(blankUser);
+  const [uploadError, setUploadError] = useState("");
   const owner = can(admin, "users.create");
+  const normalized = query.trim().toLowerCase();
+  const users = admin.users.filter((item) => !normalized || `${userName(item)} ${item.phone} ${item.position} ${roleLabel(item.role)}`.toLowerCase().includes(normalized));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!owner) return;
     await save("/api/admin/users", { method: "POST", body: JSON.stringify(user) });
     setUser(blankUser);
+    setCreating(false);
   }
 
   async function submitEdit(event: FormEvent) {
@@ -2242,6 +2555,7 @@ function AdminUsers({ admin, save }: { admin: AdminBootstrap; save: (url: string
   }
 
   function startEdit(item: AdminUser) {
+    setUploadError("");
     setEditing(item);
     setEditDraft({
       login: item.login,
@@ -2260,11 +2574,31 @@ function AdminUsers({ admin, save }: { admin: AdminBootstrap; save: (url: string
     });
   }
 
+  async function setUserImage(file: File, mode: "create" | "edit") {
+    try {
+      setUploadError("");
+      const avatarUrl = await uploadImage(file);
+      if (mode === "create") setUser((current) => ({ ...current, avatarUrl }));
+      else setEditDraft((current) => ({ ...current, avatarUrl }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Ошибка загрузки");
+    }
+  }
+
   return (
     <>
-      <div className="admin-section-title"><h2>Люди</h2><p>Справочник команды виден всем сотрудникам. Редактирование доступно владельцу.</p></div>
-      {owner && (
-        <form className="admin-form admin-card-form user-create-form" onSubmit={submit}>
+      <AdminSectionHero eyebrow="Управление командой" title="СОТРУДНИКИ" text="Роли, рабочие точки и доступ сотрудников. Владелец защищён от удаления." action={owner ? <button className="button primary" type="button" onClick={() => { setUploadError(""); setCreating(true); }}>+ Добавить сотрудника</button> : undefined} />
+      {owner && creating && (
+        <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label="Добавить сотрудника">
+          <button className="admin-editor-backdrop" type="button" aria-label="Закрыть" onClick={() => setCreating(false)} />
+        <form className="admin-form admin-card-form user-create-form admin-editor" onSubmit={submit}>
+          <button className="admin-editor-close" type="button" aria-label="Закрыть" onClick={() => setCreating(false)}>×</button>
+          <div className="admin-section-title compact"><h3>Добавить сотрудника</h3><p>Заполните профиль и назначьте роль.</p></div>
+          <div className="profile-photo-row">
+            <div className="admin-avatar profile-photo">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <span>{`${user.firstName} ${user.lastName}`.trim().slice(0, 1) || "С"}</span>}</div>
+            <label className="file-field">Фото<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && void setUserImage(event.target.files[0], "create")} /></label>
+          </div>
+          {uploadError && <p className="form-error">{uploadError}</p>}
           <div className="two-fields">
             <input value={user.firstName} onChange={(event) => setUser({ ...user, firstName: event.target.value })} placeholder="Имя" required />
             <input value={user.lastName} onChange={(event) => setUser({ ...user, lastName: event.target.value })} placeholder="Фамилия" required />
@@ -2298,14 +2632,19 @@ function AdminUsers({ admin, save }: { admin: AdminBootstrap; save: (url: string
           </select>
           <button className="button primary">Добавить пользователя</button>
         </form>
+        </div>
       )}
       {owner && editing && (
-        <form className="admin-form admin-card-form user-edit-form" onSubmit={submitEdit}>
+        <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label="Редактировать сотрудника">
+          <button className="admin-editor-backdrop" type="button" aria-label="Закрыть" onClick={() => setEditing(null)} />
+        <form className="admin-form admin-card-form user-edit-form admin-editor" onSubmit={submitEdit}>
+          <button className="admin-editor-close" type="button" aria-label="Закрыть" onClick={() => setEditing(null)}>×</button>
           <div className="admin-section-title compact"><h3>Редактировать сотрудника</h3><p>{editing.login}</p></div>
           <div className="profile-photo-row">
             <div className="admin-avatar profile-photo">{editDraft.avatarUrl ? <img src={editDraft.avatarUrl} alt="" /> : <span>{`${editDraft.firstName} ${editDraft.lastName}`.trim().slice(0, 1) || "С"}</span>}</div>
-            <label className="file-field">Фото<input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && readImageAsDataUrl(event.target.files[0], (avatarUrl) => setEditDraft({ ...editDraft, avatarUrl }))} /></label>
+            <label className="file-field">Фото<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && void setUserImage(event.target.files[0], "edit")} /></label>
           </div>
+          {uploadError && <p className="form-error">{uploadError}</p>}
           <div className="two-fields">
             <input value={editDraft.firstName} onChange={(event) => setEditDraft({ ...editDraft, firstName: event.target.value })} placeholder="Имя" required />
             <input value={editDraft.lastName} onChange={(event) => setEditDraft({ ...editDraft, lastName: event.target.value })} placeholder="Фамилия" required />
@@ -2348,9 +2687,11 @@ function AdminUsers({ admin, save }: { admin: AdminBootstrap; save: (url: string
             <button type="button" className="button danger" onClick={async () => { await save("/api/admin/users/" + editing.id, { method: "DELETE" }); setEditing(null); }}>Удалить сотрудника</button>
           )}
         </form>
+        </div>
       )}
       <div className="user-grid">
-        {admin.users.map((item) => (
+        {!users.length && <AdminEmpty title="Сотрудники не найдены" text="Измените поисковый запрос." />}
+        {users.map((item) => (
           <article key={item.id} className="user-card">
             <div className="admin-avatar">{item.avatarUrl ? <img src={item.avatarUrl} alt="" /> : <span>{userName(item).slice(0, 1)}</span>}</div>
             <div>
@@ -2366,39 +2707,40 @@ function AdminUsers({ admin, save }: { admin: AdminBootstrap; save: (url: string
     </>
   );
 }
-function AdminPickup({ admin, save }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void> }) {
-  const [point, setPoint] = useState({ name: "", address: "", comment: "", phone: "", hours: admin.settings.workHours, mapUrl: "", isActive: true });
+function AdminPickup({ admin, save, uploadImage, query }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void>; uploadImage: (file: File) => Promise<string>; query: string }) {
+  const blank: PickupPoint = { id: "", name: "", address: "", comment: "", description: "", imageUrl: "", services: [], sortOrder: admin.pickupPoints.length + 1, phone: "", hours: admin.settings.workHours, mapUrl: "", isActive: true };
+  const [point, setPoint] = useState<PickupPoint | null>(null);
+  const [uploadError, setUploadError] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await save("/api/admin/pickup-points", { method: "POST", body: JSON.stringify(point) });
-    setPoint({ name: "", address: "", comment: "", phone: "", hours: admin.settings.workHours, mapUrl: "", isActive: true });
+    if (!point) return;
+    await save(point.id ? `/api/admin/pickup-points/${point.id}` : "/api/admin/pickup-points", { method: point.id ? "PUT" : "POST", body: JSON.stringify(point) });
+    setPoint(null);
   }
+  const normalized = query.trim().toLowerCase();
+  const points = admin.pickupPoints.filter((item) => !normalized || `${item.name} ${item.address} ${item.comment || ""}`.toLowerCase().includes(normalized));
+  async function setImage(file: File) { try { setUploadError(""); const imageUrl = await uploadImage(file); setPoint((current) => current ? { ...current, imageUrl } : current); } catch (error) { setUploadError(error instanceof Error ? error.message : "Ошибка загрузки"); } }
   return (
     <>
-      <div className="admin-section-title"><h2>Точки самовывоза</h2><p>Комментарий к адресу необязательный: подъезд, ориентир, вход со двора.</p></div>
-      {can(admin, "settings.manage") && (
-        <form className="admin-form admin-card-form" onSubmit={submit}>
-          <input value={point.name} onChange={(event) => setPoint({ ...point, name: event.target.value })} placeholder="Название" required />
-          <input value={point.address} onChange={(event) => setPoint({ ...point, address: event.target.value })} placeholder="Адрес" />
-          <input value={point.comment} onChange={(event) => setPoint({ ...point, comment: event.target.value })} placeholder="Комментарий к адресу" />
-          <input inputMode="tel" value={point.phone} onChange={(event) => setPoint({ ...point, phone: formatRussianPhone(event.target.value) })} placeholder="+7 (___) ___-__-__" />
-          <input value={point.hours} onChange={(event) => setPoint({ ...point, hours: event.target.value })} placeholder="Часы работы" />
-          <input value={point.mapUrl} onChange={(event) => setPoint({ ...point, mapUrl: event.target.value })} placeholder="Ссылка на карту" />
-          <button className="button primary">Добавить точку</button>
-        </form>
-      )}
+      <AdminSectionHero eyebrow="Управление точками" title="КИОСКИ" text="Активные точки сразу доступны клиентам для самовывоза." action={can(admin, "settings.manage") ? <button className="button primary" onClick={() => setPoint(blank)}><Plus size={18} /> Добавить киоск</button> : undefined} />
       <div className="admin-table pickup-admin-table">
-        {admin.pickupPoints.map((item) => (
+        {!points.length && <AdminEmpty title="Киоски не добавлены" text="Добавьте точку самовывоза." />}
+        {points.map((item) => (
           <article key={item.id}>
+            {item.imageUrl ? <img src={item.imageUrl} alt="" /> : <div className="admin-image-fallback"><Store /></div>}
             <div>
               <strong>{item.name}</strong>
               <p>{item.address || "Адрес не указан"}</p>
               {item.comment && <small>{item.comment}</small>}
+              {!!item.services?.length && <small>{item.services.join(" · ")}</small>}
             </div>
             <span>{item.hours}</span>
+            <span className={item.isActive ? "status-pill ok" : "status-pill stop"}>{item.isActive ? "Активен" : "Отключён"}</span>
+            {can(admin, "settings.manage") && <button onClick={() => setPoint(item)}>Редактировать</button>}
           </article>
         ))}
       </div>
+      {point && <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label="Редактор киоска"><button className="admin-editor-backdrop" onClick={() => setPoint(null)} aria-label="Закрыть" /><form className="admin-form admin-card-form admin-editor" onSubmit={submit}><button className="admin-editor-close" type="button" onClick={() => setPoint(null)} aria-label="Закрыть">×</button><div className="admin-section-title compact"><h3>{point.id ? "Редактировать киоск" : "Новый киоск"}</h3></div>{point.imageUrl && <img className="admin-image-preview" src={point.imageUrl} alt="" />}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && void setImage(event.target.files[0])} />{uploadError && <p className="form-error">{uploadError}</p>}<label>Название<input required value={point.name} onChange={(event) => setPoint({ ...point, name: event.target.value })} /></label><label>Адрес<input value={point.address} onChange={(event) => setPoint({ ...point, address: event.target.value })} /></label><label>Ориентир<input value={point.comment || ""} onChange={(event) => setPoint({ ...point, comment: event.target.value })} /></label><label>Описание<textarea value={point.description || ""} onChange={(event) => setPoint({ ...point, description: event.target.value })} /></label><div className="two-fields"><label>Телефон<input inputMode="tel" value={point.phone} onChange={(event) => setPoint({ ...point, phone: formatRussianPhone(event.target.value) })} /></label><label>График<input value={point.hours} onChange={(event) => setPoint({ ...point, hours: event.target.value })} /></label></div><label>Сервисы<input value={(point.services || []).join(", ")} onChange={(event) => setPoint({ ...point, services: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} placeholder="Самовывоз 24/7, Яндекс Еда" /></label><label>Ссылка на карту<input value={point.mapUrl} onChange={(event) => setPoint({ ...point, mapUrl: event.target.value })} /></label><label>Порядок<input type="number" min="0" value={point.sortOrder || 0} onChange={(event) => setPoint({ ...point, sortOrder: Number(event.target.value) })} /></label><label className="admin-toggle"><input type="checkbox" checked={point.isActive} onChange={(event) => setPoint({ ...point, isActive: event.target.checked })} /> Активен и доступен для самовывоза</label><button className="button primary">Сохранить</button>{point.id && <button type="button" className="button danger" onClick={async () => { if (window.confirm(`Удалить киоск «${point.name}»?`)) { await save(`/api/admin/pickup-points/${point.id}`, { method: "DELETE" }); setPoint(null); } }}>Удалить киоск</button>}</form></div>}
     </>
   );
 }
@@ -2419,6 +2761,13 @@ function AdminSettings({ admin, save }: { admin: AdminBootstrap; save: (url: str
       </form>
     </>
   );
+}
+function AdminSectionHero({ eyebrow, title, text, action }: { eyebrow: string; title: string; text: string; action?: ReactNode }) {
+  return <header className="admin-section-hero"><div><p className="admin-eyebrow">{eyebrow}</p><h2>{title}</h2><p>{text}</p></div>{action && <div className="admin-section-action">{action}</div>}</header>;
+}
+
+function AdminEmpty({ title, text }: { title: string; text: string }) {
+  return <div className="admin-empty"><Package size={30} /><strong>{title}</strong><p>{text}</p></div>;
 }
 function SectionHead({ title, text }: { title: string; text: string }) {
   return (
@@ -2449,33 +2798,6 @@ function SystemState({ title, text, actionLabel, onAction }: { title: string; te
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
