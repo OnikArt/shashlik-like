@@ -9,3 +9,10 @@ server/data/store.json
 *.tsbuildinfo
 *.log
 coverage/
+.DS_Store
+.vite/
+.cache/
+*.pem
+*.key
+*.p12
+*.pfx

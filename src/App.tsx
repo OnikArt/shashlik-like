@@ -1,6 +1,6 @@
 import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowRight, Beef, Bike, Check, ChefHat, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Clock3, Flame, Grid2X2, Heart, House, Leaf, List, MapPin, Menu as MenuIcon, MessageCircle, Package, Phone, Plus, RefreshCw, Search, Send, ShoppingBag, SlidersHorizontal, Star, Store, Target, UserRound, Users, WalletCards, X } from "lucide-react";
+import { Link, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Beef, Bike, Check, ChefHat, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Clock3, Flame, Grid2X2, Heart, House, Leaf, List, MapPin, Menu as MenuIcon, MessageCircle, Package, Phone, Plus, RefreshCw, Search, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Star, Store, Target, Trash2, UserRound, Users, WalletCards, X } from "lucide-react";
 import { apiFetch, apiUrl } from "./api";
 
 type Category = { id: string; name: string; minPrice: string; sortOrder: number; isActive?: boolean };
@@ -394,6 +394,43 @@ function useCart(data: Bootstrap | null) {
   return { items, detailed, subtotal, deliveryPrice, total, count, add, update, remove, clear };
 }
 
+const favoritesStorageKey = "shashlik-favorites";
+
+function readFavorites() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(favoritesStorageKey) || localStorage.getItem("menu-favorites") || "[]") as unknown;
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function useFavorites() {
+  const [favorites, setFavorites] = useState<string[]>(readFavorites);
+  useEffect(() => {
+    const sync = () => setFavorites(readFavorites());
+    window.addEventListener("storage", sync);
+    window.addEventListener("shashlik-favorites-changed", sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("shashlik-favorites-changed", sync);
+    };
+  }, []);
+  const toggleFavorite = (productId: string) => {
+    const current = readFavorites();
+    const next = current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId];
+    try {
+      localStorage.setItem(favoritesStorageKey, JSON.stringify(next));
+      localStorage.setItem("menu-favorites", JSON.stringify(next));
+    } catch {
+      // The current tab still receives the state even when storage is unavailable.
+    }
+    setFavorites(next);
+    window.dispatchEvent(new CustomEvent("shashlik-favorites-changed"));
+  };
+  return { favorites, toggleFavorite };
+}
+
 function App() {
   const { data, error, reload } = useBootstrap();
   const cart = useCart(data);
@@ -408,7 +445,7 @@ function App() {
   const isAdmin = location.pathname.startsWith("/admin");
   const isOrderPage = location.pathname.startsWith("/order/");
   const isHome = location.pathname === "/";
-  const usesHomeDesign = isHome || isOrderPage || location.pathname === "/menu" || location.pathname === "/delivery" || location.pathname === "/pickup" || location.pathname === "/about" || location.pathname === "/contacts";
+  const usesHomeDesign = isHome || isOrderPage || location.pathname === "/menu" || location.pathname === "/delivery" || location.pathname === "/pickup" || location.pathname === "/promotions" || location.pathname === "/favorites" || location.pathname === "/about" || location.pathname === "/contacts" || location.pathname === "/cart" || location.pathname === "/checkout";
   const activeOrder = useActiveOrder(!isAdmin && !isOrderPage);
 
   useRouteMetadata(location.pathname);
@@ -444,11 +481,13 @@ function App() {
           <Route path="/menu" element={<Menu data={data} onAdd={addToCart} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
           <Route path="/product/:slug" element={<ProductPage data={data} onAdd={addToCart} />} />
           <Route path="/delivery" element={<Delivery data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
-          <Route path="/pickup" element={<Navigate to="/delivery#kiosks" replace />} />
+          <Route path="/pickup" element={<PickupPage data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => setDrawerOpen(true)} activeOrder={activeOrder} />} />
+          <Route path="/promotions" element={<PromotionsPage data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => setDrawerOpen(true)} activeOrder={activeOrder} />} />
+          <Route path="/favorites" element={<FavoritesPage data={data} onAdd={addToCart} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => setDrawerOpen(true)} activeOrder={activeOrder} />} />
           <Route path="/about" element={<About settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
           <Route path="/contacts" element={<Contacts data={data} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} activeOrder={activeOrder} />} />
-          <Route path="/cart" element={<CartPage data={data} cart={cart} />} />
-          <Route path="/checkout" element={<Checkout data={data} cart={cart} />} />
+          <Route path="/cart" element={<CartPage data={data} cart={cart} onCartOpen={() => setDrawerOpen(true)} activeOrder={activeOrder} />} />
+          <Route path="/checkout" element={<Checkout data={data} cart={cart} onCartOpen={() => setDrawerOpen(true)} activeOrder={activeOrder} />} />
           <Route path="/order-success" element={<Success settings={data.settings} />} />
           <Route path="/order/:trackingToken" element={<OrderTracking settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={() => { trackEvent("cart_opened", { value: cart.subtotal }); setDrawerOpen(true); }} />} />
           <Route path="/admin" element={<Admin onChanged={reload} themeMode={themeMode} activeTheme={activeTheme} onThemeMode={setThemeMode} />} />
@@ -476,6 +515,8 @@ function useRouteMetadata(pathname: string) {
       "/menu": ["Меню и цены | Шашлык Лайк", "Актуальное меню Шашлык Лайк: шашлык, шаурма, люля-кебаб, соусы, хлеб и напитки."],
       "/delivery": ["Доставка шашлыка по Воронежу | Шашлык Лайк", "Условия и стоимость доставки горячих блюд Шашлык Лайк по Воронежу."],
       "/pickup": ["Самовывоз | Шашлык Лайк", "Точки и условия самовывоза заказов Шашлык Лайк."],
+      "/promotions": ["Акции | Шашлык Лайк", "Актуальные предложения и популярные блюда Шашлык Лайк."],
+      "/favorites": ["Избранное | Шашлык Лайк", "Сохранённые блюда Шашлык Лайк."],
       "/about": ["О Шашлык Лайк", "Как мы готовим мясо и блюда на углях в Шашлык Лайк."],
       "/contacts": ["Контакты | Шашлык Лайк", "Телефон, время работы и способы связи с Шашлык Лайк в Воронеже."]
     };
@@ -667,24 +708,15 @@ const phoneHref = (value: string) => `tel:${value.replace(/[^+\d]/g, "")}`;
 
 function Home({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: HomeProps) {
   const activeProducts = data.products.filter((product) => product.isActive);
-  const featuredProducts = activeProducts.filter((product) => product.isFeatured);
-  const featured = (featuredProducts.length >= 5 ? featuredProducts : activeProducts).slice(0, 5);
-  const kioskRailRef = useRef<HTMLDivElement>(null);
-  const point = data.pickupPoints.find((item) => item.isActive) || {
-    id: "pobedy",
-    name: "ШашлычОК",
-    address: "Бульвар Победы, 48А",
-    phone: data.settings.phone,
-    hours: "Круглосуточно",
-    mapUrl: "",
-    comment: "на кольце бульвара Победы",
-    isActive: true
-  };
-  const kioskPoints = data.pickupPoints.filter((item) => item.isActive);
-  const visibleKioskPoints = kioskPoints.length ? kioskPoints : [point];
-  const scrollKiosks = (direction: -1 | 1) => {
-    kioskRailRef.current?.scrollBy({ left: direction * kioskRailRef.current.clientWidth * 0.82, behavior: "smooth" });
-  };
+  const popularProducts = activeProducts.filter((product) => product.isFeatured);
+  const { favorites, toggleFavorite } = useFavorites();
+  const [category, setCategory] = useState("all");
+  const [popularIndex, setPopularIndex] = useState(0);
+  const popularTouch = useRef(0);
+  const categories = data.categories.filter((item) => popularProducts.some((product) => product.categoryId === item.id));
+  const filteredPopular = category === "all" ? popularProducts : popularProducts.filter((product) => product.categoryId === category);
+  useEffect(() => setPopularIndex(0), [category]);
+  const selectPopular = (index: number) => setPopularIndex(Math.max(0, Math.min(index, filteredPopular.length - 1)));
 
   return (
     <div className="home-shell">
@@ -711,72 +743,33 @@ function Home({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: Ho
             <HomeBenefit icon={<Bike />} title="Яндекс Еда" text="и Delivery Club" />
           </div>
         </div>
-        <div className="home-slide-index" aria-hidden="true"><span>01</span><i /><small>03</small></div>
-        <a className="home-scroll-cue" href="#popular" aria-label="Перейти к популярным блюдам"><ChevronDown /><span>Листайте<br />вниз</span></a>
+        <a className="home-scroll-cue" href="#popular" aria-label="Перейти к популярным блюдам"><picture><source media="(max-width: 760px)" srcSet="/assets/scroll-arrow.svg" /><img src="/assets/scroll-mouse.svg" alt="" /></picture><span>Листайте<br />вниз</span></a>
       </section>
 
-      <div className="home-content home-container">
-        <div className="home-showcase-grid">
-          <section className="home-section home-popular" id="popular">
-            <HomeSectionHead eyebrow="Попробуйте наши хиты" title="Популярное меню" link="/menu" linkText="Всё меню" />
-            <div className="home-category-tabs" aria-label="Категории меню">
-              {data.categories.slice(0, 8).map((category, index) => (
-                <Link className={index === 0 ? "active" : ""} key={category.id} to={`/menu?category=${category.id}`}>{category.name}</Link>
-              ))}
+      <div className="home-content production-home">
+        <section className="production-section popular-showcase home-container" id="popular" aria-labelledby="popular-title">
+          <HomeSectionHead eyebrow="Выбор гостей" title="Популярное меню" link="/menu" linkText="Всё меню" />
+          <div className="home-category-tabs" role="tablist" aria-label="Категории популярных товаров">
+            <button type="button" role="tab" aria-selected={category === "all"} className={category === "all" ? "active" : ""} onClick={() => setCategory("all")}>Все</button>
+            {categories.map((item) => <button type="button" role="tab" aria-selected={category === item.id} className={category === item.id ? "active" : ""} key={item.id} onClick={() => setCategory(item.id)}>{item.name}</button>)}
+          </div>
+          {filteredPopular.length ? <>
+            <div className="popular-carousel" onTouchStart={(event) => { popularTouch.current = event.touches[0]?.clientX || 0; }} onTouchEnd={(event) => { const delta = (event.changedTouches[0]?.clientX || 0) - popularTouch.current; if (Math.abs(delta) > 42) selectPopular(popularIndex + (delta < 0 ? 1 : -1)); }}>
+              <button type="button" className="production-arrow previous" onClick={() => selectPopular(popularIndex - 1)} disabled={popularIndex === 0} aria-label="Предыдущий товар"><ChevronLeft /></button>
+              <div className="popular-track">
+                {filteredPopular.map((product, index) => <HomeProductCard key={product.id} product={product} onAdd={onAdd} favorite={favorites.includes(product.id)} onFavorite={toggleFavorite} active={index === popularIndex} onSelect={() => selectPopular(index)} />)}
+              </div>
+              <button type="button" className="production-arrow next" onClick={() => selectPopular(popularIndex + 1)} disabled={popularIndex === filteredPopular.length - 1} aria-label="Следующий товар"><ChevronRight /></button>
             </div>
-            <div className="home-product-rail">
-              {featured.map((product) => <HomeProductCard key={product.id} product={product} onAdd={onAdd} />)}
-            </div>
-          </section>
+            <CarouselDots count={filteredPopular.length} active={popularIndex} onSelect={selectPopular} label="Показать товар" />
+          </> : <div className="production-empty"><Heart /><h3>В этой категории пока нет популярных блюд</h3><p>Откройте всё меню или выберите другую категорию.</p><Link className="home-button home-button-ghost" to="/menu">Открыть меню <ArrowRight /></Link></div>}
+        </section>
 
-          <section className="home-promo-panel" id="promotions">
-            <HomeSectionHead eyebrow="Выгодные предложения" title="Акции" link="/menu" linkText="Смотреть всё" />
-            <div className="home-promo-list">
-              <Link to="/menu" className="home-promo-card home-promo-card-meat">
-                <span>Скоро</span><strong>Новое предложение</strong><small>Следите за обновлениями меню</small><ArrowRight />
-              </Link>
-              <Link to="/menu" className="home-promo-card home-promo-card-set">
-                <strong>Соберите любимый заказ</strong><small>Все актуальные блюда уже в меню</small><ArrowRight />
-              </Link>
-            </div>
-            <div className="home-pagination" aria-hidden="true"><i className="active" /><i /><i /></div>
-          </section>
-        </div>
+        <PromotionsShowcase data={data} />
+        <DeliveryShowcase data={data} />
+        <KioskShowcase data={data} />
 
-        <div className="home-operations-grid">
-          <section className="home-delivery-panel">
-            <HomeSectionHead title="Доставка и самовывоз" link="/delivery" linkText="Подробнее" />
-            <div className="home-delivery-options">
-              <div><Clock3 /><span><small>Доставка курьером</small><strong>{data.settings.workHours}</strong><p>До {money(data.settings.freeDeliveryFrom)} — {money(data.settings.deliveryPrice)}<br />От {money(data.settings.freeDeliveryFrom)} — <b>бесплатно</b></p></span></div>
-              <div><MapPin /><span><small>Самовывоз</small><strong>{point.address}</strong><p>{point.comment || "Заказ будет ждать вас горячим."}<br />{point.hours}</p></span></div>
-              <div><Target /><span><small>Зона доставки</small><strong>Воронеж</strong><p>Правый берег и Центральный район</p></span></div>
-            </div>
-            <div className="home-delivery-actions">
-              <Link className="home-button home-button-primary compact" to="/delivery">Заказать доставку <ArrowRight /></Link>
-              <Link className="home-button home-button-ghost compact" to="/pickup">Показать точку <ArrowRight /></Link>
-            </div>
-          </section>
-
-          <section className="home-kiosks">
-            <HomeSectionHead title="Наши киоски" link="/pickup" linkText="Все точки" />
-            <div className="home-kiosk-track" ref={kioskRailRef}>
-              {visibleKioskPoints.map((kiosk) => (
-                <Link className="home-kiosk-card" to="/pickup" key={kiosk.id}>
-                  <img src="/assets/home-kiosk-evening.webp" alt={`Киоск ${kiosk.address}`} width="1792" height="1024" loading="lazy" decoding="async" />
-                  <span><strong>{kiosk.address}</strong><small>{kiosk.comment || kiosk.hours}</small><em>{kiosk.hours}</em></span>
-                  <ArrowRight />
-                </Link>
-              ))}
-            </div>
-            <div className="home-kiosk-nav">
-              <button type="button" onClick={() => scrollKiosks(-1)} disabled={visibleKioskPoints.length < 2} aria-label="Предыдущие киоски"><ChevronLeft /></button>
-              <div aria-hidden="true">{visibleKioskPoints.map((kiosk, index) => <i className={index === 0 ? "active" : ""} key={kiosk.id} />)}</div>
-              <button type="button" onClick={() => scrollKiosks(1)} disabled={visibleKioskPoints.length < 2} aria-label="Следующие киоски"><ChevronRight /></button>
-            </div>
-          </section>
-        </div>
-
-        <div className="home-bottom-grid">
+        <div className="home-bottom-grid home-container">
           <section className="home-story">
             <div className="home-story-copy"><span>О нас</span><h2>Больше чем шашлык</h2><p>Шашлык Лайк × ШашлычОК — две сети, которые объединяют любовь к настоящему шашлыку, качественному мясу и уютной атмосфере.</p><Link className="home-button home-button-primary compact" to="/about">Узнать больше <ArrowRight /></Link></div>
             <div className="home-story-facts"><HomeBenefit icon={<Flame />} title="Качество" text="вкус, который вы помните" /><HomeBenefit icon={<Leaf />} title="Натуральные продукты" text="свежее мясо и овощи" /><HomeBenefit icon={<Clock3 />} title="Опыт" text="готовим на углях" /><HomeBenefit icon={<Heart />} title="Команда" text="готовим как для себя" /></div>
@@ -805,19 +798,20 @@ function HomeBenefit({ icon, title, text }: { icon: ReactNode; title: string; te
 function HomeHeader({ settings, cartCount, cartTotal, onCartOpen, activePath, activeOrder }: { settings: Settings; cartCount: number; cartTotal: number; onCartOpen: () => void; activePath?: string; activeOrder?: TrackingOrder | null }) {
   const [open, setOpen] = useState(false);
   const secondaryPhone = formatRussianPhone(settings.phone);
-  const navigation = [["Меню", "/menu"], ["Акции", "#promotions"], ["Доставка", "/delivery"], ["О нас", "/about"], ["Контакты", "/contacts"]];
+  const navigation = [["Меню", "/menu"], ["Акции", "/promotions"], ["Доставка", "/delivery"], ["Киоски", "/pickup"], ["О нас", "/about"], ["Контакты", "/contacts"]];
   return (
     <>
     <header className="home-header">
       <div className="home-header-inner home-container">
         <Link className="home-brand" to="/" aria-label="Шашлык Лайк и ШашлычОК, главная"><span className="home-brand-mark"><Flame /></span><span><strong>ШАШЛЫК <i>ЛАЙК</i> <b>×</b> ШАШЛЫЧ<i>ОК</i></strong><small>Воронеж · настоящий вкус на углях</small></span></Link>
         <nav className={open ? "home-nav open" : "home-nav"} aria-label="Навигация по сайту">
-          {navigation.map(([label, href]) => href.startsWith("#") ? <a key={href} href={activePath ? `/${href}` : href} onClick={() => setOpen(false)}>{label}</a> : <Link className={activePath === href ? "active" : ""} key={href} to={href} onClick={() => setOpen(false)}>{label}</Link>)}
+          {navigation.map(([label, href]) => <Link className={activePath === href ? "active" : ""} key={href} to={href} onClick={() => setOpen(false)}>{label}</Link>)}
           <div className="home-nav-mobile-phones"><a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a><a href={phoneHref(secondaryPhone)}>{secondaryPhone}</a></div>
         </nav>
         <div className="home-header-actions">
           <a className="home-phone" href={phoneHref(homePrimaryPhone)}><Phone /> <span>{homePrimaryPhone}</span></a>
           <a className="home-phone secondary" href={phoneHref(secondaryPhone)}><Phone /> <span>{secondaryPhone}</span></a>
+          <Link className="home-favorites-button" to="/favorites" aria-label="Открыть избранное"><Heart /></Link>
           <button className="home-cart-button" onClick={onCartOpen} aria-label={`Открыть корзину, товаров ${cartCount}`}><ShoppingBag />{cartCount > 0 && <b>{cartCount}</b>}<span>{cartTotal > 0 ? money(cartTotal) : "Корзина"}</span></button>
           <button className="home-menu-button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={open ? "Закрыть меню" : "Открыть меню"}>{open ? <X /> : <MenuIcon />}</button>
         </div>
@@ -832,14 +826,102 @@ function HomeSectionHead({ eyebrow, title, link, linkText }: { eyebrow?: string;
   return <div className="home-section-head"><div>{eyebrow && <span>{eyebrow}</span>}<h2>{title}</h2></div><Link to={link}>{linkText} <ArrowRight /></Link></div>;
 }
 
-function HomeProductCard({ product, onAdd }: { product: Product; onAdd: HomeProps["onAdd"] }) {
-  const [favorite, setFavorite] = useState(false);
+function HomeProductCard({ product, onAdd, favorite, onFavorite, active, onSelect }: { product: Product; onAdd: HomeProps["onAdd"]; favorite: boolean; onFavorite: (id: string) => void; active: boolean; onSelect: () => void }) {
+  const needsConfiguration = Boolean(product.options?.length || product.addonIds?.length);
   return (
-    <article className="home-product-card">
-      <div className="home-product-image"><img src={product.imageUrl} alt={product.name} width="640" height="480" loading="lazy" decoding="async" />{product.badge && <span>{product.badge}</span>}<button className={favorite ? "favorite" : ""} aria-pressed={favorite} onClick={() => setFavorite((value) => !value)} aria-label={`${favorite ? "Убрать" : "Добавить"} ${product.name} ${favorite ? "из" : "в"} избранное`}><Heart fill={favorite ? "currentColor" : "none"} /></button></div>
-      <div className="home-product-info"><div><h3>{product.name}</h3><p>{product.description}</p></div><div className="home-product-buy"><span><strong>{money(product.price)}</strong><small>{product.unit}</small></span><button disabled={!product.isAvailable} onClick={() => onAdd(product, product.step || 1)} aria-label={`Добавить ${product.name} в корзину`}><Plus /></button></div></div>
+    <article className={`home-product-card${active ? " active" : ""}`} onClick={onSelect} tabIndex={active ? -1 : 0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelect(); }}>
+      <div className="home-product-image"><Link to={`/product/${product.slug}`} onClick={(event) => event.stopPropagation()}><img src={product.imageUrl} alt={product.name} width="640" height="480" loading="lazy" decoding="async" /></Link><span>Популярное</span><button className={favorite ? "favorite" : ""} aria-pressed={favorite} onClick={(event) => { event.stopPropagation(); onFavorite(product.id); }} aria-label={`${favorite ? "Убрать" : "Добавить"} ${product.name} ${favorite ? "из" : "в"} избранное`}><Heart fill={favorite ? "currentColor" : "none"} /></button></div>
+      <div className="home-product-info"><div><Link to={`/product/${product.slug}`} onClick={(event) => event.stopPropagation()}><h3>{product.name}</h3></Link><p>{product.description}</p></div><div className="home-product-buy"><span><strong>{money(product.price)}</strong><small>{product.unit}</small></span>{needsConfiguration ? <Link to={`/product/${product.slug}`} onClick={(event) => event.stopPropagation()} aria-label={`Выбрать вариант ${product.name}`}><Plus /></Link> : <button disabled={!product.isAvailable} onClick={(event) => { event.stopPropagation(); onAdd(product, product.step || 1); }} aria-label={`Добавить ${product.name} в корзину`}><Plus /></button>}</div></div>
     </article>
   );
+}
+
+function CarouselDots({ count, active, onSelect, label }: { count: number; active: number; onSelect: (index: number) => void; label: string }) {
+  return <div className="production-dots" aria-label="Навигация по слайдам">{Array.from({ length: count }, (_, index) => <button type="button" key={index} className={index === active ? "active" : ""} aria-current={index === active ? "true" : undefined} aria-label={`${label} ${index + 1}`} onClick={() => onSelect(index)} />)}</div>;
+}
+
+function PromotionsShowcase({ data, standalone = false }: { data: Bootstrap; standalone?: boolean }) {
+  const candidates = data.products.filter((product) => product.isActive && product.isAvailable).sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || a.sortOrder - b.sortOrder).slice(0, 4);
+  const [active, setActive] = useState(0);
+  const touchStart = useRef(0);
+  const select = (index: number) => setActive(Math.max(0, Math.min(index, candidates.length - 1)));
+  const Heading = standalone ? "h1" : "h2";
+  return <section className={`production-section promotion-showcase${standalone ? " standalone" : ""}`} id="promotions" aria-labelledby={standalone ? "promotions-page-title" : "promotions-title"}>
+    <div className="home-container promotion-inner">
+      <div className="production-heading"><p>● &nbsp; АКЦИИ</p><Heading id={standalone ? "promotions-page-title" : "promotions-title"}>Вкусные <strong>предложения</strong></Heading><span>Только подтверждённые цены из актуального меню. Новые акции появятся здесь после публикации.</span></div>
+      {candidates.length ? <>
+        <div className="promotion-carousel" onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX || 0; }} onTouchEnd={(event) => { const delta = (event.changedTouches[0]?.clientX || 0) - touchStart.current; if (Math.abs(delta) > 42) select(active + (delta < 0 ? 1 : -1)); }}>
+          <div className="promotion-track" style={{ "--promo-index": active } as CSSProperties}>
+            {candidates.map((product, index) => <Link to={`/product/${product.slug}`} className={`promotion-card${index === active ? " active" : ""}`} key={product.id} onClick={() => setActive(index)}>
+              <img src={product.imageUrl} alt={product.name} width="720" height="900" loading="lazy" decoding="async" />
+              <span className="promotion-badge">{product.badge || (product.isFeatured ? "ПОПУЛЯРНОЕ" : "В МЕНЮ")}</span>
+              <div><h3>{product.name}</h3><p>{product.description}</p><strong>{money(product.price)}</strong><small>{product.unit}</small></div>
+            </Link>)}
+          </div>
+          <button type="button" className="production-arrow previous" onClick={() => select(active - 1)} disabled={active === 0} aria-label="Предыдущее предложение"><ChevronLeft /></button>
+          <button type="button" className="production-arrow next" onClick={() => select(active + 1)} disabled={active === candidates.length - 1} aria-label="Следующее предложение"><ChevronRight /></button>
+        </div>
+        <CarouselDots count={candidates.length} active={active} onSelect={select} label="Показать предложение" />
+      </> : <div className="production-empty"><Flame /><h3>Активных предложений пока нет</h3><p>Мы покажем их здесь после публикации в системе управления.</p></div>}
+      <Link className="production-outline-cta" to={standalone ? "/menu" : "/promotions"}>{standalone ? "Перейти в меню" : "Смотреть все акции"} <ArrowRight /></Link>
+    </div>
+  </section>;
+}
+
+function DeliveryShowcase({ data }: { data: Bootstrap }) {
+  const roundClock = data.pickupPoints.some((point) => point.isActive && /круглосуточ|24\s*\/\s*7/i.test(point.hours));
+  return <section className="production-section delivery-showcase" aria-labelledby="delivery-showcase-title">
+    <div className="home-container">
+      <div className="production-heading"><p>● &nbsp; ДОСТАВКА И САМОВЫВОЗ</p><h2 id="delivery-showcase-title">Любимые блюда <strong>там, где вам удобно</strong></h2><span>Быстро, горячо и без лишних забот.</span></div>
+      <div className="delivery-showcase-grid">
+        <article className="delivery-showcase-card courier"><img src="/assets/cinematic-grill-v1.png" alt="Горячие блюда с доставкой" width="1672" height="941" loading="lazy" /><div><span className="delivery-showcase-icon"><Bike /></span><h3>Доставка</h3><strong>{data.settings.workHours}</strong><p><b>{money(data.settings.deliveryPrice)}</b> при заказе до {money(data.settings.freeDeliveryFrom)}.<br />От {money(data.settings.freeDeliveryFrom)} — бесплатно.</p><small>{data.settings.deliveryRegions.replace(/\n/g, " · ")}</small><Link to="/checkout?delivery=delivery">Заказать доставку <ArrowRight /></Link></div></article>
+        <article className="delivery-showcase-card pickup"><img src="/assets/home-kiosk-evening.webp" alt="Самовывоз из фирменного киоска" width="1600" height="800" loading="lazy" /><div><span className="delivery-showcase-icon"><ShoppingBag /></span><h3>Самовывоз</h3><strong>{roundClock ? "Есть круглосуточная точка" : data.settings.workHours}</strong><p>Выберите удобный действующий киоск при оформлении заказа.</p><small>{data.pickupPoints.filter((point) => point.isActive).length} точки доступны для выбора</small><Link to="/pickup">Выбрать киоск <ArrowRight /></Link></div></article>
+      </div>
+    </div>
+  </section>;
+}
+
+function KioskShowcase({ data, standalone = false }: { data: Bootstrap; standalone?: boolean }) {
+  const points = data.pickupPoints.filter((point) => point.isActive).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  const [active, setActive] = useState(0);
+  const touchStart = useRef(0);
+  useEffect(() => { if (active > points.length - 1) setActive(Math.max(points.length - 1, 0)); }, [active, points.length]);
+  const select = (index: number) => setActive(Math.max(0, Math.min(index, points.length - 1)));
+  const Heading = standalone ? "h1" : "h2";
+  return <section className={`production-section kiosk-showcase${standalone ? " standalone" : ""}`} aria-labelledby={standalone ? "pickup-page-title" : "kiosk-showcase-title"}>
+    <div className="home-container">
+      <div className="production-heading with-action"><div><p>● &nbsp; НАШИ КИОСКИ</p><Heading id={standalone ? "pickup-page-title" : "kiosk-showcase-title"}>Наши <strong>киоски</strong></Heading><span>Всегда рядом — выбирайте удобную точку и забирайте заказ без ожидания.</span></div>{!standalone && <Link className="production-outline-cta" to="/pickup">Все киоски <ArrowRight /></Link>}</div>
+      {points.length ? <>
+        <div className="kiosk-carousel" onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX || 0; }} onTouchEnd={(event) => { const delta = (event.changedTouches[0]?.clientX || 0) - touchStart.current; if (Math.abs(delta) > 42) select(active + (delta < 0 ? 1 : -1)); }}>
+          <div className="kiosk-track" style={{ "--kiosk-index": active } as CSSProperties}>{points.map((point, index) => {
+            const routeUrl = point.mapUrl || `https://yandex.ru/maps/?text=${encodeURIComponent(`Воронеж, ${point.address}`)}`;
+            const roundClock = /круглосуточ|24\s*\/\s*7/i.test(point.hours);
+            return <article className={`kiosk-card${index === active ? " active" : ""}`} key={point.id}>
+              <div className="kiosk-card-photo"><img src={point.imageUrl || "/assets/home-kiosk-evening.webp"} alt={`Киоск по адресу ${point.address}`} width="1600" height="800" loading="lazy" decoding="async" /><span>{index + 1} / {points.length}</span></div>
+              <div className="kiosk-card-copy"><b><Flame /> {point.name || "Шашлык Лайк"}</b><h3>{point.address}</h3><p>{point.comment || "Ориентир уточняется"}</p>{point.description && <div className="kiosk-route"><MapPin /><span><strong>Как пройти</strong>{point.description}</span></div>}<div className="kiosk-meta"><span><Clock3 /><small>Часы работы</small><strong>{roundClock ? "Круглосуточно" : point.hours || data.settings.workHours}</strong></span><span><ShoppingBag /><small>Самовывоз</small><strong>{point.services?.includes("pickup") || !point.services?.length ? "Доступен" : "Уточняется"}</strong></span></div><a href={routeUrl} target="_blank" rel="noreferrer">Показать на карте <MapPin /></a></div>
+            </article>;
+          })}</div>
+          <button type="button" className="production-arrow previous" onClick={() => select(active - 1)} disabled={active === 0} aria-label="Предыдущий киоск"><ChevronLeft /></button><button type="button" className="production-arrow next" onClick={() => select(active + 1)} disabled={active === points.length - 1} aria-label="Следующий киоск"><ChevronRight /></button>
+        </div><CarouselDots count={points.length} active={active} onSelect={select} label="Показать киоск" />
+      </> : <div className="production-empty"><MapPin /><h3>Активных киосков пока нет</h3><p>Адреса появятся после публикации в админ-панели.</p></div>}
+    </div>
+  </section>;
+}
+
+type ProductionPageProps = { data: Bootstrap; cartCount: number; cartTotal: number; onCartOpen: () => void; activeOrder: TrackingOrder | null };
+
+function PromotionsPage({ data, cartCount, cartTotal, onCartOpen, activeOrder }: ProductionPageProps) {
+  return <div className="home-shell production-standalone"><HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/promotions" activeOrder={activeOrder} /><main><PromotionsShowcase data={data} standalone /></main><HomeFooter settings={data.settings} /></div>;
+}
+
+function PickupPage({ data, cartCount, cartTotal, onCartOpen, activeOrder }: ProductionPageProps) {
+  return <div className="home-shell production-standalone"><HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/pickup" activeOrder={activeOrder} /><main><KioskShowcase data={data} standalone /></main><HomeFooter settings={data.settings} /></div>;
+}
+
+function FavoritesPage({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: ProductionPageProps & { onAdd: HomeProps["onAdd"] }) {
+  const { favorites, toggleFavorite } = useFavorites();
+  const products = data.products.filter((product) => product.isActive && favorites.includes(product.id));
+  return <div className="home-shell production-standalone"><HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activePath="/favorites" activeOrder={activeOrder} /><main className="favorites-page home-container"><div className="production-heading"><p>● &nbsp; СОХРАНЁННЫЕ БЛЮДА</p><h1>Ваше <strong>избранное</strong></h1><span>Любимые позиции всегда под рукой.</span></div>{products.length ? <div className="favorites-grid">{products.map((product) => <ProductCard key={product.id} product={product} data={data} onAdd={onAdd} favorite onFavorite={toggleFavorite} />)}</div> : <div className="production-empty"><Heart /><h2>В избранном пока пусто</h2><p>Нажимайте на сердце в карточках блюд — они появятся здесь.</p><Link className="home-button home-button-primary" to="/menu">Перейти в меню <ArrowRight /></Link></div>}</main><HomeFooter settings={data.settings} /></div>;
 }
 
 function HomeFooter({ settings }: { settings: Settings }) {
@@ -847,7 +929,7 @@ function HomeFooter({ settings }: { settings: Settings }) {
   const telegramBrand = settings.telegramBrand.toLowerCase();
   const telegramOrders = settings.telegramOrders.toLowerCase();
   return (
-    <footer className="home-footer"><div className="home-container"><div><Link className="home-brand" to="/"><span className="home-brand-mark"><Flame /></span><span><strong>ШАШЛЫК <i>ЛАЙК</i> × ШАШЛЫЧ<i>ОК</i></strong><small>Воронеж · настоящий вкус на углях</small></span></Link><p>Две сети — одна любовь к настоящему вкусу.</p></div><nav><strong>Навигация</strong><Link to="/menu">Меню</Link><Link to="/#promotions">Акции</Link><Link to="/delivery">Доставка</Link><Link to="/about">О нас</Link><Link to="/contacts">Контакты</Link></nav><div><strong>Контакты</strong><a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a><a href={phoneHref(secondaryPhone)}>{secondaryPhone}</a><span>Ежедневно {settings.workHours}</span></div><div><strong>Мы в Telegram</strong><a href={`https://t.me/${telegramBrand.replace("@", "")}`}>{telegramBrand}</a><a href={`https://t.me/${telegramOrders.replace("@", "")}`}>{telegramOrders}</a></div></div><div className="home-footer-bottom home-container"><span>© {new Date().getFullYear()} Шашлык Лайк × ШашлычОК. Все права защищены.</span><span>Воронеж</span></div></footer>
+    <footer className="home-footer"><div className="home-container"><div><Link className="home-brand" to="/"><span className="home-brand-mark"><Flame /></span><span><strong>ШАШЛЫК <i>ЛАЙК</i> × ШАШЛЫЧ<i>ОК</i></strong><small>Воронеж · настоящий вкус на углях</small></span></Link><p>Две сети — одна любовь к настоящему вкусу.</p></div><nav><strong>Навигация</strong><Link to="/menu">Меню</Link><Link to="/promotions">Акции</Link><Link to="/delivery">Доставка</Link><Link to="/pickup">Киоски</Link><Link to="/favorites">Избранное</Link><Link to="/about">О нас</Link><Link to="/contacts">Контакты</Link></nav><div><strong>Контакты</strong><a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a><a href={phoneHref(secondaryPhone)}>{secondaryPhone}</a><span>Ежедневно {settings.workHours}</span></div><div><strong>Мы в Telegram</strong><a href={`https://t.me/${telegramBrand.replace("@", "")}`}>{telegramBrand}</a><a href={`https://t.me/${telegramOrders.replace("@", "")}`}>{telegramOrders}</a></div></div><div className="home-footer-bottom home-container"><span>© {new Date().getFullYear()} Шашлык Лайк × ШашлычОК. Все права защищены.</span><span>Воронеж</span></div></footer>
   );
 }
 
@@ -885,13 +967,7 @@ function Menu({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: Me
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<MenuSort>("default");
   const [view, setView] = useState<MenuView>("grid");
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("menu-favorites") || "[]");
-    } catch {
-      return [];
-    }
-  });
+  const { favorites, toggleFavorite } = useFavorites();
   const catalogRef = useRef<HTMLDivElement>(null);
   const activeProducts = data.products.filter((product) => product.isActive);
   const normalizedQuery = query.trim().toLocaleLowerCase("ru");
@@ -914,11 +990,6 @@ function Menu({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: Me
     setParams(categoryId === "all" ? {} : { category: categoryId });
     window.requestAnimationFrame(() => catalogRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
-  const toggleFavorite = (productId: string) => setFavorites((current) => {
-    const next = current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId];
-    localStorage.setItem("menu-favorites", JSON.stringify(next));
-    return next;
-  });
   const categoryImage = (categoryId: string) => activeProducts.find((product) => product.categoryId === categoryId)?.imageUrl || "/assets/placeholder.svg";
 
   return (
@@ -1102,6 +1173,7 @@ function ProductCard({ product, data, onAdd, favorite, onFavorite }: { product: 
 function ProductPage({ data, onAdd }: { data: Bootstrap; onAdd: (product: Product, quantity: number, option?: string, addons?: string[]) => void }) {
   const { slug = "" } = useParams();
   const product = data.products.find((item) => item.slug === slug && item.isActive);
+  const { favorites, toggleFavorite } = useFavorites();
   const [quantity, setQuantity] = useState(product?.step || 1);
   const [option, setOption] = useState(product?.options?.[0] || "");
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
@@ -1114,7 +1186,7 @@ function ProductPage({ data, onAdd }: { data: Bootstrap; onAdd: (product: Produc
   return <main className="product-page page">
     <nav className="menu-breadcrumb" aria-label="Хлебные крошки"><Link to="/">Главная</Link><ChevronRight /><Link to="/menu">Меню</Link><ChevronRight /><span>{product.name}</span></nav>
     <section className="product-detail">
-      <div className="product-detail-media"><img src={product.imageUrl || "/assets/placeholder.svg"} alt={product.name} />{product.badge && <span>{product.badge}</span>}</div>
+      <div className="product-detail-media"><img src={product.imageUrl || "/assets/placeholder.svg"} alt={product.name} />{product.badge && <span>{product.badge}</span>}<button type="button" className={`product-detail-favorite${favorites.includes(product.id) ? " active" : ""}`} aria-pressed={favorites.includes(product.id)} aria-label={favorites.includes(product.id) ? "Убрать из избранного" : "Добавить в избранное"} onClick={() => toggleFavorite(product.id)}><Heart fill={favorites.includes(product.id) ? "currentColor" : "none"} /></button></div>
       <div className="product-detail-copy"><p className="eyebrow">Настоящий вкус на углях</p><h1>{product.name}</h1><p>{product.description}</p><div className="product-detail-meta"><span>{product.unit}</span><span className={product.isAvailable ? "status-pill ok" : "status-pill stop"}>{product.isAvailable ? "В наличии" : "Недоступен"}</span></div>
         {!!product.options?.length && <label>Вариант<select value={option} onChange={(event) => setOption(event.target.value)}>{product.options.map((item) => <option key={item}>{item}</option>)}</select></label>}
         {!!addons.length && <fieldset className="product-detail-addons"><legend>Добавьте к заказу</legend>{addons.map((addon) => <label key={addon.id}><input type="checkbox" checked={selectedAddons.includes(addon.id)} onChange={(event) => setSelectedAddons((current) => event.target.checked ? [...current, addon.id] : current.filter((id) => id !== addon.id))} /><span>{addon.name}</span><b>+{money(addon.price)}</b></label>)}</fieldset>}
@@ -1167,16 +1239,23 @@ function CartDrawer({ data, cart, open, onClose }: { data: Bootstrap; cart: Retu
   );
 }
 
-function CartPage({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof useCart> }) {
+type CommercePageProps = { data: Bootstrap; cart: ReturnType<typeof useCart>; onCartOpen: () => void; activeOrder: TrackingOrder | null };
+
+function CartPage({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
   useEffect(() => trackEvent("cart_opened", { value: cart.subtotal }), []);
   return (
-    <section className="page narrow">
-      <CartContent data={data} cart={cart} />
-    </section>
+    <div className="home-shell commerce-shell">
+      <HomeHeader settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={onCartOpen} activeOrder={activeOrder} />
+      <main className="cart-page">
+        <div className="commerce-backdrop" aria-hidden="true"><img src="/assets/home-hero-cinematic.webp" alt="" /></div>
+        <section className="cart-page-panel home-container" aria-labelledby="cart-page-title"><CartContent data={data} cart={cart} titleId="cart-page-title" /></section>
+      </main>
+      <HomeFooter settings={data.settings} />
+    </div>
   );
 }
 
-function CartContent({ data, cart, compact = false, onCheckout }: { data: Bootstrap; cart: ReturnType<typeof useCart>; compact?: boolean; onCheckout?: () => void }) {
+function CartContent({ data, cart, compact = false, onCheckout, titleId, checkoutSummary = false }: { data: Bootstrap; cart: ReturnType<typeof useCart>; compact?: boolean; onCheckout?: () => void; titleId?: string; checkoutSummary?: boolean }) {
   const crossSell = data.products.filter((product) => ["flatbread", "garlic-sauce", "shippi", "tomato-sauce"].includes(product.id)).slice(0, 3);
   if (!cart.detailed.length) {
     return (
@@ -1191,7 +1270,7 @@ function CartContent({ data, cart, compact = false, onCheckout }: { data: Bootst
   }
   return (
     <div className={compact ? "cart compact" : "cart"}>
-      <h1>ВАШ ЗАКАЗ</h1>
+      <div className="cart-heading"><div><h1 id={titleId}>ВАШ ЗАКАЗ</h1><p>{cart.detailed.length} поз. · {money(cart.subtotal)}</p></div><ShoppingBag aria-hidden="true" /></div>
       <div className="cart-items">
         {cart.detailed.map((item, index) => (
           <article key={`${item.productId}-${index}`} className="cart-row">
@@ -1204,13 +1283,13 @@ function CartContent({ data, cart, compact = false, onCheckout }: { data: Bootst
             </div>
             <div className="cart-row-end">
               <strong>{money(item.lineTotal)}</strong>
-              <button onClick={() => cart.remove(index)}>Удалить</button>
+              <button onClick={() => cart.remove(index)} aria-label={`Удалить ${item.product.name}`}><Trash2 aria-hidden="true" /><span>Удалить</span></button>
             </div>
           </article>
         ))}
       </div>
-      <DeliveryProgress subtotal={cart.subtotal} settings={data.settings} />
-      <div className="cross-sell">
+      {!checkoutSummary && <DeliveryProgress subtotal={cart.subtotal} settings={data.settings} />}
+      {!checkoutSummary && <div className="cross-sell">
         <h2>ДОБАВИТЬ К ЗАКАЗУ?</h2>
         {crossSell.map((product) => (
           <button key={product.id} onClick={() => cart.add(product, product.step || 1)}>
@@ -1218,11 +1297,12 @@ function CartContent({ data, cart, compact = false, onCheckout }: { data: Bootst
             <strong>{money(product.price)}</strong>
           </button>
         ))}
-      </div>
+      </div>}
       <Totals subtotal={cart.subtotal} deliveryPrice={cart.deliveryPrice} total={cart.total} />
-      <Link className="button primary full" to="/checkout" onClick={onCheckout}>
+      {!checkoutSummary && <Link className="button primary full" to="/checkout" onClick={onCheckout}>
         ОФОРМИТЬ ЗАКАЗ →
-      </Link>
+      </Link>}
+      {!checkoutSummary && <p className="cart-security"><ShieldCheck aria-hidden="true" /> Ваши данные используются только для оформления заказа.</p>}
     </div>
   );
 }
@@ -1232,7 +1312,7 @@ function DeliveryProgress({ subtotal, settings }: { subtotal: number; settings: 
   const progress = Math.min((subtotal / settings.freeDeliveryFrom) * 100, 100);
   return (
     <div className="delivery-progress">
-      <strong>{remaining ? `До бесплатной доставки осталось ${money(remaining)}` : "Доставка бесплатно"}</strong>
+      <div className="delivery-progress-heading"><Bike aria-hidden="true" /><strong>{remaining ? `До бесплатной доставки осталось ${money(remaining)}` : "Доставка бесплатно"}</strong></div>
       <div>
         <span style={{ width: `${progress}%` }} />
       </div>
@@ -1262,7 +1342,7 @@ function Totals({ subtotal, deliveryPrice, total }: { subtotal: number; delivery
   );
 }
 
-function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof useCart> }) {
+function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
   const navigate = useNavigate();
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
   const [paymentMethod, setPaymentMethod] = useState<"CARD_ON_DELIVERY" | "TRANSFER_ON_DELIVERY">("CARD_ON_DELIVERY");
@@ -1298,6 +1378,14 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
     if (busy) return;
     setBusy(true);
     setError("");
+    if (deliveryType === "delivery" && addressState.status !== "valid") {
+      const valid = await validateAddress();
+      if (!valid) {
+        setError("Уточните адрес в зоне доставки перед оформлением заказа.");
+        setBusy(false);
+        return;
+      }
+    }
     const pickupPoint = data.pickupPoints.find((point) => point.id === form.pickupPointId);
     const payload = {
       ...form,
@@ -1335,26 +1423,32 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
     }
   }
 
-  if (!cart.detailed.length) return <CartPage data={data} cart={cart} />;
+  if (!cart.detailed.length) return <CartPage data={data} cart={cart} onCartOpen={onCartOpen} activeOrder={activeOrder} />;
 
   return (
-    <section className="page checkout">
-      <div className="page-head">
-        <h1>ОФОРМЛЕНИЕ ЗАКАЗА</h1>
-        <p>Онлайн-оплаты нет. Заказ передаётся в обработку, оплата — при получении.</p>
-      </div>
-      <form className="checkout-grid" onSubmit={submit}>
-        <div className="form-panel">
-          <h2>Контактные данные</h2>
+    <div className="home-shell commerce-shell">
+      <HomeHeader settings={data.settings} cartCount={cart.count} cartTotal={cart.subtotal} onCartOpen={onCartOpen} activeOrder={activeOrder} />
+      <main className="checkout-page">
+        <div className="checkout-hero" aria-hidden="true"><img src="/assets/home-hero-cinematic.webp" alt="" /></div>
+        <div className="home-container checkout-wrap">
+          <Link className="checkout-back" to="/menu"><ArrowLeft aria-hidden="true" /> Назад в меню</Link>
+          <div className="page-head">
+            <p>Оформление</p>
+            <h1>ОФОРМЛЕНИЕ <strong>ЗАКАЗА</strong></h1>
+            <span>Заполните данные для доставки или самовывоза. Оплата производится при получении.</span>
+          </div>
+          <form className="checkout-grid" onSubmit={submit}>
+            <div className="form-panel checkout-form-card">
+          <h2><UserRound aria-hidden="true" /> Контактные данные</h2>
           <label>
             Имя
-            <input required autoComplete="name" value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} />
+            <input required minLength={2} autoComplete="name" value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} />
           </label>
           <label>
             Телефон
-            <input required inputMode="tel" autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: formatRussianPhone(event.target.value) })} placeholder="+7 (___) ___-__-__" />
+            <input required pattern="\\+7 \\(\\d{3}\\) \\d{3}-\\d{2}-\\d{2}" title="Введите номер в формате +7 (900) 000-00-00" inputMode="tel" autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: formatRussianPhone(event.target.value) })} placeholder="+7 (___) ___-__-__" />
           </label>
-          <h2>Способ получения</h2>
+          <h2><Bike aria-hidden="true" /> Способ получения</h2>
           <div className="segmented">
             <button type="button" className={deliveryType === "delivery" ? "active" : ""} onClick={() => setDeliveryType("delivery")}>
               Доставка
@@ -1393,9 +1487,9 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
           ) : (
             <label>
               Точка самовывоза
-              <select value={form.pickupPointId} onChange={(event) => setForm({ ...form, pickupPointId: event.target.value })}>
-                <option value="">Адреса будут добавлены через админ-панель</option>
-                {data.pickupPoints.map((point) => (
+              <select required value={form.pickupPointId} onChange={(event) => setForm({ ...form, pickupPointId: event.target.value })}>
+                <option value="">Выберите действующий киоск</option>
+                {data.pickupPoints.filter((point) => point.isActive).map((point) => (
                   <option key={point.id} value={point.id}>
                     {point.name} — {point.address || "адрес уточняется"}
                   </option>
@@ -1408,7 +1502,7 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
             <textarea value={form.comment} onChange={(event) => setForm({ ...form, comment: event.target.value })} />
           </label>
           <div className="payment-note">
-            <strong>Способ оплаты при получении</strong>
+            <strong><WalletCards aria-hidden="true" /> Способ оплаты при получении</strong>
             <div className="segmented checkout-payment-options" role="radiogroup" aria-label="Способ оплаты">
               <button type="button" role="radio" aria-checked={paymentMethod === "CARD_ON_DELIVERY"} className={paymentMethod === "CARD_ON_DELIVERY" ? "active" : ""} onClick={() => setPaymentMethod("CARD_ON_DELIVERY")}>Картой при получении</button>
               <button type="button" role="radio" aria-checked={paymentMethod === "TRANSFER_ON_DELIVERY"} className={paymentMethod === "TRANSFER_ON_DELIVERY" ? "active" : ""} onClick={() => setPaymentMethod("TRANSFER_ON_DELIVERY")}>Переводом при получении</button>
@@ -1416,15 +1510,19 @@ function Checkout({ data, cart }: { data: Bootstrap; cart: ReturnType<typeof use
             <p>Онлайн-оплаты на сайте нет. Мы свяжемся с вами для подтверждения заказа.</p>
           </div>
           {error && <p className="form-error">{error}</p>}
-          <button className="button primary full" disabled={busy} aria-busy={busy}>
-            {busy ? "ОФОРМЛЯЕМ..." : "ОФОРМИТЬ ЗАКАЗ →"}
-          </button>
         </div>
         <aside className="summary-panel">
-          <CartContent data={data} cart={cart} compact />
+          <CartContent data={data} cart={cart} compact checkoutSummary />
+          <button className="button primary full checkout-submit" disabled={busy} aria-busy={busy}>
+            {busy ? "ОФОРМЛЯЕМ..." : "ПОДТВЕРДИТЬ ЗАКАЗ →"}
+          </button>
+          <p className="cart-security"><ShieldCheck aria-hidden="true" /> Корзина очистится только после подтверждения заказа сервером.</p>
         </aside>
       </form>
-    </section>
+        </div>
+      </main>
+      <HomeFooter settings={data.settings} />
+    </div>
   );
 }
 
@@ -2396,7 +2494,7 @@ function AdminProducts({ admin, save, uploadImage, query }: { admin: AdminBootst
 
   return (
     <>
-      <AdminSectionHero eyebrow="Управление меню" title="МЕНЮ / ТОВАРЫ" text="Доступность, цены и хиты сразу отражаются на витрине." action={editable ? <button className="button primary" onClick={() => { setEditing(blank); setEditorOpen(true); }}><Plus size={18} /> Добавить товар</button> : undefined} />
+      <AdminSectionHero eyebrow="Управление меню" title="МЕНЮ / ТОВАРЫ" text="Доступность, цены и популярные позиции сразу отражаются на витрине." action={editable ? <button className="button primary" onClick={() => { setEditing(blank); setEditorOpen(true); }}><Plus size={18} /> Добавить товар</button> : undefined} />
       {editable && editorOpen && (
         <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label={editing.id ? "Редактирование товара" : "Добавление товара"}>
           <button className="admin-editor-backdrop" aria-label="Закрыть" onClick={() => setEditorOpen(false)} />
@@ -2428,7 +2526,7 @@ function AdminProducts({ admin, save, uploadImage, query }: { admin: AdminBootst
           <div className="switches">
             <label><input type="checkbox" checked={editing.isActive} onChange={(event) => setEditing({ ...editing, isActive: event.target.checked })} /> Активен</label>
             <label><input type="checkbox" checked={editing.isAvailable} onChange={(event) => setEditing({ ...editing, isAvailable: event.target.checked })} /> В наличии</label>
-            <label><input type="checkbox" checked={editing.isFeatured} onChange={(event) => setEditing({ ...editing, isFeatured: event.target.checked })} /> Хит</label>
+            <label><input type="checkbox" checked={editing.isFeatured} onChange={(event) => setEditing({ ...editing, isFeatured: event.target.checked })} /> Популярное</label>
           </div>
           <button className="button primary">{editing.id ? "Сохранить" : "Создать"}</button>
           {editing.id && <button className="button danger" type="button" onClick={async () => { if (window.confirm(`Удалить «${editing.name}»? История заказов сохранится.`)) { await save(`/api/admin/products/${editing.id}`, { method: "DELETE" }); setEditorOpen(false); setEditing(blank); } }}>Удалить товар</button>}
@@ -2798,7 +2896,3 @@ function SystemState({ title, text, actionLabel, onAction }: { title: string; te
 }
 
 export default App;
-
-
-
-
