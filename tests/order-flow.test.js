@@ -87,18 +87,38 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     assert.equal(categoryCreated.response.status, 201);
     const addonCreated = await adminRequest("/api/admin/addons", "POST", { name: "Тестовый соус", price: 25, group: "Соусы", isActive: true, isCustomerVisible: true });
     assert.equal(addonCreated.response.status, 201);
-    const productCreated = await adminRequest("/api/admin/products", "POST", { name: "Тестовый товар", slug: "test-product", description: "Для E2E", price: 100, unit: "1 шт", step: 1, categoryId: categoryCreated.body.category.id, imageUrl: "/assets/placeholder.svg", isActive: true, isAvailable: true, isFeatured: false, addonIds: [addonCreated.body.addon.id], sortOrder: 50 });
+    const productCreated = await adminRequest("/api/admin/products", "POST", { name: "Тестовый товар", slug: "test-product", description: "Для E2E", price: 100, unit: "1 шт", step: 1, categoryId: categoryCreated.body.category.id, imageUrl: "/assets/placeholder.svg", images: ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"], isActive: true, isAvailable: true, isFeatured: false, addonIds: [addonCreated.body.addon.id], sortOrder: 50 });
     assert.equal(productCreated.response.status, 201);
+    assert.deepEqual(productCreated.body.product.images, ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"]);
     const pointCreated = await adminRequest("/api/admin/pickup-points", "POST", { name: "Тестовая точка", address: "Воронеж", hours: "09:00–22:00", isActive: true });
     assert.equal(pointCreated.response.status, 201);
     const userCreated = await adminRequest("/api/admin/users", "POST", { login: "e2e-user", password: "temporary-password", firstName: "Тест", lastName: "Сотрудник", role: "EMPLOYEE", isActive: true });
     assert.equal(userCreated.response.status, 201);
+    const managerCreated = await adminRequest("/api/admin/users", "POST", { login: "e2e-manager", password: "temporary-password", firstName: "Тест", lastName: "Управляющий", role: "MANAGER", isActive: true });
+    assert.equal(managerCreated.response.status, 201);
 
-    const productUpdated = await adminRequest(`/api/admin/products/${productCreated.body.product.id}`, "PUT", { price: 125 });
+    const productUpdated = await adminRequest(`/api/admin/products/${productCreated.body.product.id}`, "PUT", { price: 125, imageUrl: "/assets/cinematic-grill-v1.png", images: ["/assets/cinematic-grill-v1.png", "/assets/placeholder.svg"] });
     assert.equal(productUpdated.body.product.price, 125);
+    assert.equal(productUpdated.body.product.imageUrl, "/assets/cinematic-grill-v1.png");
+
+    const managerLoginResponse = await fetch(baseUrl + "/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ login: "e2e-manager", password: "temporary-password" }) });
+    const managerLogin = await managerLoginResponse.json();
+    assert.equal(managerLoginResponse.status, 200);
+    const managerHeaders = { "content-type": "application/json", authorization: "Bearer " + managerLogin.token };
+    const managerBootstrapResponse = await fetch(baseUrl + "/api/admin/bootstrap", { headers: managerHeaders });
+    const managerBootstrap = await managerBootstrapResponse.json();
+    assert.equal(managerBootstrap.users.length, 1);
+    assert.equal(managerBootstrap.users[0].id, managerCreated.body.user.id);
+    const forbiddenPriceResponse = await fetch(baseUrl + `/api/admin/products/${productCreated.body.product.id}`, { method: "PUT", headers: managerHeaders, body: JSON.stringify({ price: 999 }) });
+    assert.equal(forbiddenPriceResponse.status, 403);
+    const availabilityResponse = await fetch(baseUrl + `/api/admin/products/${productCreated.body.product.id}`, { method: "PUT", headers: managerHeaders, body: JSON.stringify({ isAvailable: false }) });
+    assert.equal(availabilityResponse.status, 200);
+    assert.equal((await availabilityResponse.json()).product.isAvailable, false);
+    await adminRequest(`/api/admin/products/${productCreated.body.product.id}`, "PUT", { isAvailable: true });
     const categoryBlocked = await adminRequest(`/api/admin/categories/${categoryCreated.body.category.id}`, "DELETE");
     assert.equal(categoryBlocked.response.status, 409);
     assert.equal((await adminRequest(`/api/admin/users/${userCreated.body.user.id}`, "DELETE")).response.status, 200);
+    assert.equal((await adminRequest(`/api/admin/users/${managerCreated.body.user.id}`, "DELETE")).response.status, 200);
     assert.equal((await adminRequest(`/api/admin/pickup-points/${pointCreated.body.point.id}`, "DELETE")).response.status, 200);
     assert.equal((await adminRequest(`/api/admin/products/${productCreated.body.product.id}`, "DELETE")).response.status, 200);
     assert.equal((await adminRequest(`/api/admin/categories/${categoryCreated.body.category.id}`, "DELETE")).response.status, 200);
@@ -108,6 +128,16 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     const admin = await adminResponse.json();
     const savedOrder = admin.orders.find((order) => order.orderNumber === created.order.orderNumber);
     assert.ok(savedOrder);
+
+    const unconfirmedEdit = await adminRequest(`/api/admin/orders/${savedOrder.id}`, "PATCH", { ...savedOrder, items: [{ productId: "pork-neck", quantity: 200, addons: [] }], agreedWithCustomer: false, expectedUpdatedAt: savedOrder.updatedAt });
+    assert.equal(unconfirmedEdit.response.status, 400);
+    const confirmedEdit = await adminRequest(`/api/admin/orders/${savedOrder.id}`, "PATCH", { customerName: "Тестовый заказ", phone: "+7 (900) 000-00-00", deliveryType: "delivery", address: "ул. Ленина, 14", apartment: "2", entrance: "1", floor: "1", intercom: "2", comment: "Согласовано", items: [{ productId: "pork-neck", quantity: 200, addons: [] }], agreedWithCustomer: true, expectedUpdatedAt: savedOrder.updatedAt });
+    assert.equal(confirmedEdit.response.status, 200);
+    assert.equal(confirmedEdit.body.order.subtotal, 360);
+    assert.equal(confirmedEdit.body.order.changeLog.length, 1);
+
+    const activeArchive = await adminRequest(`/api/admin/orders/${savedOrder.id}`, "DELETE");
+    assert.equal(activeArchive.response.status, 409);
 
     let expectedStatus = "new";
     for (const status of ["accepted", "preparing", "ready", "delivering", "completed"]) {
@@ -119,6 +149,13 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
       assert.equal(statusResponse.status, 200);
       expectedStatus = status;
     }
+
+    const archiveResponse = await adminRequest(`/api/admin/orders/${savedOrder.id}`, "DELETE");
+    assert.equal(archiveResponse.response.status, 200);
+    assert.ok(archiveResponse.body.order.archivedAt);
+    const restoreResponse = await adminRequest(`/api/admin/orders/${savedOrder.id}/restore`, "POST");
+    assert.equal(restoreResponse.response.status, 200);
+    assert.equal(restoreResponse.body.order.archivedAt, "");
 
     const reviewResponse = await fetch(baseUrl + "/api/orders/track/" + created.order.trackingToken + "/review", {
       method: "POST",

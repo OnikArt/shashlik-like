@@ -103,6 +103,7 @@ test("admin bootstrap does not expose Telegram secrets or one-time links", async
   assert.equal(result.response.status, 200);
   assert.equal("telegramLinks" in result.body, false);
   assert.equal("telegramUpdateOffset" in result.body, false);
+  assert.equal("telegramOutbox" in result.body, false);
   assert.ok(result.body.users.every((user) => !user.telegramUserId && !user.telegramUsername));
   assert.ok(result.body.users.every((user) => !user.telegramChatId || user.telegramChatId === "connected"));
   assert.ok(result.body.orderStatuses.includes("preparing"));
