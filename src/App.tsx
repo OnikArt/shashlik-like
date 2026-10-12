@@ -478,6 +478,32 @@ function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [location.key, navigationType]);
 
+  useEffect(() => {
+    let observer: IntersectionObserver | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      const elements = Array.from(document.querySelectorAll<HTMLElement>(
+        ".production-section, .home-bottom-grid, .menu-products-section, .product-related, .delivery-kiosks, .about-values, .about-brand-photo, .contacts-logistics, .contacts-kiosks, .order-status-details, .order-status-support, .admin-work > section, .admin-dashboard > *"
+      ));
+      if (!("IntersectionObserver" in window)) return;
+      const nextObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-revealed");
+          nextObserver.unobserve(entry.target);
+        });
+      }, { rootMargin: "0px 0px -8%", threshold: 0.08 });
+      observer = nextObserver;
+      elements.forEach((element) => {
+        element.classList.add("reveal-section");
+        nextObserver.observe(element);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [location.pathname, data]);
+
   const addToCart = (product: Product, quantity: number, option = "", addons: string[] = []) => {
     cart.add(product, quantity, option, addons);
     trackEvent("add_to_cart", { productId: product.id, quantity, value: lineItemTotal(product, quantity) });
@@ -526,7 +552,7 @@ function App() {
 
 function useRouteMetadata(pathname: string, data: Bootstrap | null) {
   useEffect(() => {
-    const privateRoute = pathname.startsWith("/order/") || pathname.startsWith("/admin") || pathname === "/checkout" || pathname === "/cart";
+    const privateRoute = pathname.startsWith("/order/") || pathname.startsWith("/admin") || pathname === "/checkout" || pathname === "/cart" || pathname === "/order-success";
     const metadata: Record<string, [string, string]> = {
       "/": ["Шашлык с доставкой в Воронеже | Шашлык Лайк", "Шашлык, шаурма, люля и блюда на углях с доставкой по Воронежу. Заказ онлайн, оплата при получении."],
       "/menu": ["Меню и цены | Шашлык Лайк", "Актуальное меню Шашлык Лайк: шашлык, шаурма, люля-кебаб, соусы, хлеб и напитки."],
@@ -539,7 +565,8 @@ function useRouteMetadata(pathname: string, data: Bootstrap | null) {
     };
     const privateMetadata: Record<string, [string, string]> = {
       "/cart": ["Корзина | Шашлык Лайк", "Корзина заказа Шашлык Лайк."],
-      "/checkout": ["Оформление заказа | Шашлык Лайк", "Оформление заказа в Шашлык Лайк."]
+      "/checkout": ["Оформление заказа | Шашлык Лайк", "Оформление заказа в Шашлык Лайк."],
+      "/order-success": ["Заказ принят | Шашлык Лайк", "Подтверждение заказа Шашлык Лайк."]
     };
     const productSlug = pathname.startsWith("/product/") ? decodeURIComponent(pathname.slice("/product/".length)) : "";
     const product = productSlug ? data?.products.find((item) => item.slug === productSlug && item.isActive) : undefined;
@@ -1146,7 +1173,7 @@ function ProductCard({ product, data, onAdd, favorite, onFavorite }: { product: 
         <button type="button" className={`menu-favorite${favorite ? " active" : ""}`} aria-pressed={favorite} onClick={() => onFavorite(product.id)} aria-label={`${favorite ? "Убрать" : "Добавить"} ${product.name} ${favorite ? "из" : "в"} избранное`}><Heart fill={favorite ? "currentColor" : "none"} /></button>
       </div>
       <div className="product-body">
-        <div><h3 className="product-title" title={product.name}><Link to={`/product/${product.slug}`}>{product.name}</Link></h3><p className="product-description" title={product.description}>{product.description}</p></div>
+        <div><h3 className="product-title" title={product.name}><Link to={`/product/${product.slug}`}>{product.name}</Link></h3><p className="product-description" title={product.description}>{product.description}</p><Link className="product-details-link" to={`/product/${product.slug}`}>Подробнее <ArrowRight /></Link></div>
         <div className="menu-product-buy"><small>{product.unit}</small><strong className="price">{money(product.price)}</strong><button ref={configureButtonRef} type="button" disabled={!product.isAvailable} onClick={handleAdd} aria-label={product.isAvailable ? `Добавить ${product.name} в корзину` : `${product.name} недоступен`}><Plus /></button></div>
       </div>
       {configuring && (
@@ -1233,7 +1260,7 @@ function ProductPage({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrde
         <div className="product-detail-buy"><Quantity value={quantity} step={product.step || 1} displayValue={formatQuantity(product, quantity)} onChange={setQuantity} /><strong>{money(total)}</strong><button className="button primary" disabled={!product.isAvailable} onClick={() => onAdd(product, quantity, option, selectedAddons)}><ShoppingBag size={19} /> {product.isAvailable ? "Добавить в корзину" : "Недоступно"}</button></div>
       </div>
     </section>
-    {!!related.length && <section className="product-related"><div className="section-head"><h2>Вам также может понравиться</h2></div><div className="product-related-grid">{related.map((item) => <Link key={item.id} to={`/product/${item.slug}`}><img src={item.images?.[0] || item.imageUrl} alt="" /><span>{item.name}</span><small>{item.unit}</small><b>{money(item.price)}</b></Link>)}</div></section>}
+    {!!related.length && <section className="product-related"><div className="section-head"><h2>Вам также может понравиться</h2><p>Ещё несколько блюд из этой категории.</p></div><div className="product-related-grid">{related.map((item) => <ProductCard key={item.id} product={item} data={data} onAdd={onAdd} favorite={favorites.includes(item.id)} onFavorite={toggleFavorite} />)}</div></section>}
     </main>
     <HomeFooter settings={data.settings} />
   </div>;
@@ -1255,18 +1282,49 @@ function Quantity({ value, step, displayValue, onChange }: { value: number; step
 
 function CartDrawer({ data, cart, open, onClose }: { data: Bootstrap; cart: ReturnType<typeof useCart>; open: boolean; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     if (!open) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const drawer = closeRef.current?.closest<HTMLElement>(".cart-drawer");
+      const focusable = drawer
+        ? Array.from(drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute("hidden"))
+        : [];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
     document.body.style.overflow = "hidden";
-    document.addEventListener("keydown", closeOnEscape);
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    document.addEventListener("keydown", handleKeyDown);
     window.setTimeout(() => closeRef.current?.focus(), 0);
     return () => {
       document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.paddingRight = previousPaddingRight;
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="drawer-shell" role="dialog" aria-modal="true" aria-label="Корзина">
@@ -1302,10 +1360,11 @@ function CartContent({ data, cart, compact = false, onCheckout, titleId, checkou
   if (!cart.detailed.length) {
     return (
       <div className="empty-cart">
-        <h1>КОРЗИНА ПОКА ПУСТА</h1>
-        <p>Но это легко исправить.</p>
-        <Link className="button primary" to="/menu">
-          СМОТРЕТЬ МЕНЮ →
+        <span className="empty-cart-icon" aria-hidden="true"><ShoppingBag /></span>
+        <h1>Корзина пока пуста</h1>
+        <p>Добавьте любимые блюда из меню, и они появятся здесь.</p>
+        <Link className="button primary" to="/menu" onClick={onCheckout}>
+          Смотреть меню <ArrowRight aria-hidden="true" />
         </Link>
       </div>
     );
@@ -2106,7 +2165,7 @@ function can(admin: AdminBootstrap, permission: string) {
 
 function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: () => void; themeMode: ThemeMode; activeTheme: ActiveTheme; onThemeMode: (mode: ThemeMode) => void }) {
   const [token, setToken] = useState(localStorage.getItem("admin-token") || "");
-  const [loginName, setLoginName] = useState("admin");
+  const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [admin, setAdmin] = useState<AdminBootstrap | null>(null);
@@ -2215,14 +2274,14 @@ function Admin({ onChanged, themeMode, activeTheme, onThemeMode }: { onChanged: 
             <span>Шашлык Лайк</span>
           </div>
           <h1>АДМИН-ПАНЕЛЬ</h1>
-          <p>Вход для сотрудников: логин и пароль. Локальный владелец: login admin, пароль из .env.</p>
+          <p>Используйте выданные вам данные сотрудника.</p>
           <label>
             Логин
-            <input value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder="admin" />
+            <input autoComplete="username" value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder="Логин" />
           </label>
           <label>
             Пароль
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Пароль" />
+            <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Пароль" />
           </label>
           {error && <p className="form-error">{error}</p>}
           <button className="button primary" disabled={busy} aria-busy={busy}>{busy ? "Входим..." : "Войти"}</button>

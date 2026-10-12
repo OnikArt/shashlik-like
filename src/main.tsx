@@ -8,6 +8,7 @@ import "./admin-system.css";
 import "./commerce-system.css";
 import "./frontend-production.css";
 import "./unified-system.css";
+import "./light-system.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

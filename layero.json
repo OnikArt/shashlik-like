@@ -1,0 +1,6 @@
+{
+  "$schema": "https://layero.ru/schema/layero-v2.json",
+  "runtime": "node_web",
+  "startCommand": "npm start",
+  "port": 4174
+}

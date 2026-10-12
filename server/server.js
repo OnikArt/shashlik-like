@@ -31,6 +31,7 @@ const dataDir = path.dirname(storePath);
 const port = Number(process.env.PORT || 4174);
 const tokenSecret = process.env.ADMIN_TOKEN_SECRET || "local-shashlik-like-secret";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin";
+const telegramPollingEnabled = process.env.TELEGRAM_POLLING_ENABLED !== "false";
 const corsOriginPatterns = String(process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173,http://localhost:4175")
   .split(",")
   .map((value) => value.trim().replace(/\/$/, ""))
@@ -1074,20 +1075,38 @@ function calculateOrder(store, payload) {
   const productsById = new Map(store.products.map((product) => [product.id, product]));
   const addonsById = new Map(store.addons.map((addon) => [addon.id, addon]));
   const items = [];
+  const requestedItems = Array.isArray(payload.items) ? payload.items : [];
+  if (requestedItems.length > 100) throw new Error("В заказе слишком много позиций");
 
-  for (const item of payload.items || []) {
+  for (const item of requestedItems) {
+    if (!item || typeof item !== "object") throw new Error("Некорректная позиция заказа");
     const product = productsById.get(item.productId);
     if (!product || !product.isActive || !product.isAvailable) {
       throw new Error("Товар недоступен");
     }
-    const quantity = Math.max(Number(item.quantity || 1), 1);
+    const quantity = Number(item.quantity);
+    const step = Math.max(Number(product.step || 1), 1);
+    const quantityInSteps = quantity / step;
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isInteger(quantityInSteps) || quantityInSteps > 100) {
+      throw new Error("Некорректное количество товара «" + product.name + "»");
+    }
+    const allowedOptions = Array.isArray(product.options) ? product.options.map(String) : [];
+    const option = String(item.option || "").trim();
+    if ((allowedOptions.length && !allowedOptions.includes(option)) || (!allowedOptions.length && option)) {
+      throw new Error("Недоступный вариант товара «" + product.name + "»");
+    }
     const allowedAddonIds = new Set(product.addonIds || []);
-    const addons = (item.addons || [])
-      .filter((id) => allowedAddonIds.has(id))
+    const requestedAddonIds = Array.isArray(item.addons) ? item.addons.map(String) : [];
+    if (new Set(requestedAddonIds).size !== requestedAddonIds.length || requestedAddonIds.some((id) => !allowedAddonIds.has(id))) {
+      throw new Error("Одно из дополнений для товара «" + product.name + "» недоступно");
+    }
+    const addons = requestedAddonIds
       .map((id) => addonsById.get(id))
-      .filter(Boolean)
-      .filter((addon) => addon.isActive)
+      .filter((addon) => addon?.isActive)
       .map((addon) => ({ id: addon.id, name: addon.name, price: addon.price }));
+    if (addons.length !== requestedAddonIds.length) {
+      throw new Error("Одно из дополнений для товара «" + product.name + "» недоступно");
+    }
     const addonsTotal = addons.reduce((sum, addon) => sum + addon.price, 0);
     const lineTotal = lineItemTotal(product, quantity, addonsTotal);
     items.push({
@@ -1097,7 +1116,7 @@ function calculateOrder(store, payload) {
       price: product.price,
       quantity,
       quantityLabel: quantityLabel(product, quantity),
-      option: item.option || "",
+      option,
       addons,
       total: lineTotal
     });
@@ -1173,7 +1192,8 @@ async function telegramRequest(method, body) {
   const response = await fetch("https://api.telegram.org/bot" + token + "/" + method, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(12_000)
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.ok) throw new Error(payload.description || "Telegram HTTP " + response.status);
@@ -1508,21 +1528,30 @@ async function pollTelegram() {
 }
 
 function sanitizeProduct(input, fallback = {}) {
+  const name = String(input.name ?? fallback.name ?? "").trim();
+  const price = Number(input.price ?? fallback.price ?? 0);
+  const step = Number(input.step ?? fallback.step ?? 1);
+  if (!name) throw new Error("Укажите название товара");
+  if (!Number.isFinite(price) || price < 0) throw new Error("Цена товара должна быть неотрицательным числом");
+  if (!Number.isFinite(step) || step <= 0) throw new Error("Шаг количества должен быть положительным числом");
   const fallbackImages = Array.isArray(fallback.images) && fallback.images.length
     ? fallback.images
     : [fallback.imageUrl || "/assets/placeholder.svg"];
   const requestedImages = Array.isArray(input.images) ? input.images : fallbackImages;
   const images = [...new Set(requestedImages.map((value) => String(value || "").trim()).filter((value) => /^(\/|https?:\/\/)/i.test(value)))].slice(0, 8);
-  const requestedMain = String(input.imageUrl || images[0] || fallback.imageUrl || "/assets/placeholder.svg").trim();
+  const requestedMainCandidate = String(input.imageUrl || images[0] || fallback.imageUrl || "/assets/placeholder.svg").trim();
+  const requestedMain = /^(\/|https?:\/\/)/i.test(requestedMainCandidate) ? requestedMainCandidate : (images[0] || "/assets/placeholder.svg");
   const normalizedImages = [requestedMain, ...images.filter((value) => value !== requestedMain)].slice(0, 8);
+  const options = [...new Set((Array.isArray(input.options) ? input.options : fallback.options || []).map((value) => String(value || "").trim()).filter(Boolean))].slice(0, 24);
+  const addonIds = [...new Set((Array.isArray(input.addonIds) ? input.addonIds : fallback.addonIds || []).map(String))].slice(0, 64);
   return {
     id: input.id || fallback.id || crypto.randomUUID(),
     slug: input.slug || fallback.slug || String(input.name || "product").toLowerCase().replace(/\s+/g, "-"),
-    name: String(input.name || fallback.name || "").trim(),
+    name,
     description: String(input.description || fallback.description || "").trim(),
-    price: Number(input.price ?? fallback.price ?? 0),
+    price,
     unit: String(input.unit || fallback.unit || "1 шт").trim(),
-    step: Number(input.step ?? fallback.step ?? 1),
+    step,
     categoryId: String(input.categoryId || fallback.categoryId || "shashlik"),
     imageUrl: normalizedImages[0] || "/assets/placeholder.svg",
     images: normalizedImages.length ? normalizedImages : ["/assets/placeholder.svg"],
@@ -1530,9 +1559,9 @@ function sanitizeProduct(input, fallback = {}) {
     isAvailable: Boolean(input.isAvailable ?? fallback.isAvailable ?? true),
     isFeatured: Boolean(input.isFeatured ?? fallback.isFeatured ?? false),
     badge: String(input.badge || fallback.badge || ""),
-    options: Array.isArray(input.options) ? input.options : fallback.options || [],
+    options,
     addonGroup: input.addonGroup || fallback.addonGroup || "",
-    addonIds: Array.isArray(input.addonIds) ? input.addonIds.map(String) : fallback.addonIds || [],
+    addonIds,
     sortOrder: Number(input.sortOrder ?? fallback.sortOrder ?? 999)
   };
 }
@@ -1729,7 +1758,8 @@ async function api(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/admin/login") {
     if (!enforceRateLimit(req, res, "admin-login", 10, 15 * 60_000)) return;
     const payload = await readJson(req);
-    const login = String(payload.login || "admin").trim();
+    const login = String(payload.login || "").trim();
+    if (!login || !payload.password) return send(res, 400, { error: "Введите логин и пароль" });
     const user = store.users.find((item) => item.login === login && item.isActive);
     if (!user || !verifyPassword(payload.password, user.passwordHash)) {
       return send(res, 401, { error: "Неверный логин или пароль" });
@@ -1893,17 +1923,23 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
 
   if (req.method === "POST" && url.pathname === "/api/admin/products") {
     if (!ensurePermission(adminUser, res, "products.edit")) return;
-    const payload = await readJson(req);
-    if (Number(payload.price || 0) !== 0 && !hasPermission(adminUser, "products.price_edit")) return send(res, 403, { error: "Недостаточно прав для назначения цены" });
-    const product = sanitizeProduct(payload);
-    store.products.push(product);
-    await notifyAudit(store, adminUser, "products", "Добавлен товар", product.name, [
-      "цена: " + product.price + " ₽",
-      "варианты: " + formatChangedValue(product.options),
-      "дополнения: " + formatChangedValue(product.addonIds)
-    ]);
-    await writeStore(store);
-    return send(res, 201, { product });
+    try {
+      const payload = await readJson(req);
+      if (Number(payload.price || 0) !== 0 && !hasPermission(adminUser, "products.price_edit")) return send(res, 403, { error: "Недостаточно прав для назначения цены" });
+      const product = sanitizeProduct(payload);
+      if (!store.categories.some((category) => category.id === product.categoryId)) return send(res, 400, { error: "Выберите существующую категорию" });
+      if (product.addonIds.some((id) => !store.addons.some((addon) => addon.id === id))) return send(res, 400, { error: "Выбрано несуществующее дополнение" });
+      store.products.push(product);
+      await notifyAudit(store, adminUser, "products", "Добавлен товар", product.name, [
+        "цена: " + product.price + " ₽",
+        "варианты: " + formatChangedValue(product.options),
+        "дополнения: " + formatChangedValue(product.addonIds)
+      ]);
+      await writeStore(store);
+      return send(res, 201, { product });
+    } catch (error) {
+      return send(res, error.httpStatus || 400, { error: error.message || "Не удалось создать товар" });
+    }
   }
 
   const productMatch = url.pathname.match(/^\/api\/admin\/products\/([^/]+)$/);
@@ -1912,22 +1948,28 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
     const productIndex = store.products.findIndex((product) => product.id === productId);
     if (productIndex === -1) return notFound(res);
     if (req.method === "PUT") {
-      const payload = await readJson(req);
-      const before = { ...store.products[productIndex] };
-      if (!hasPermission(adminUser, "products.edit")) {
-        if (!hasPermission(adminUser, "products.availability")) return forbid(res);
-        const allowedKeys = new Set(["isAvailable"]);
-        if (Object.keys(payload).some((key) => !allowedKeys.has(key))) return send(res, 403, { error: "Доступно только изменение наличия" });
+      try {
+        const payload = await readJson(req);
+        const before = { ...store.products[productIndex] };
+        if (!hasPermission(adminUser, "products.edit")) {
+          if (!hasPermission(adminUser, "products.availability")) return forbid(res);
+          const allowedKeys = new Set(["isAvailable"]);
+          if (Object.keys(payload).some((key) => !allowedKeys.has(key))) return send(res, 403, { error: "Доступно только изменение наличия" });
+        }
+        if (Number(payload.price ?? before.price) !== Number(before.price) && !hasPermission(adminUser, "products.price_edit")) {
+          return send(res, 403, { error: "Недостаточно прав для изменения цены" });
+        }
+        const next = sanitizeProduct({ ...before, ...payload }, before);
+        if (!store.categories.some((category) => category.id === next.categoryId)) return send(res, 400, { error: "Выберите существующую категорию" });
+        if (next.addonIds.some((id) => !store.addons.some((addon) => addon.id === id))) return send(res, 400, { error: "Выбрано несуществующее дополнение" });
+        store.products[productIndex] = next;
+        const changes = describeChanges(before, next, ["name", "description", "price", "unit", "categoryId", "imageUrl", "images", "isActive", "isAvailable", "isFeatured", "options", "addonIds"]);
+        await notifyAudit(store, adminUser, "products", "Изменён товар", next.name, changes);
+        await writeStore(store);
+        return send(res, 200, { product: next });
+      } catch (error) {
+        return send(res, error.httpStatus || 400, { error: error.message || "Не удалось изменить товар" });
       }
-      if (Number(payload.price ?? before.price) !== Number(before.price) && !hasPermission(adminUser, "products.price_edit")) {
-        return send(res, 403, { error: "Недостаточно прав для изменения цены" });
-      }
-      const next = sanitizeProduct({ ...before, ...payload }, before);
-      store.products[productIndex] = next;
-      const changes = describeChanges(before, next, ["name", "description", "price", "unit", "categoryId", "imageUrl", "images", "isActive", "isAvailable", "isFeatured", "options", "addonIds"]);
-      await notifyAudit(store, adminUser, "products", "Изменён товар", next.name, changes);
-      await writeStore(store);
-      return send(res, 200, { product: next });
     }
     if (req.method === "DELETE") {
       if (!ensurePermission(adminUser, res, "products.edit")) return;
@@ -2224,7 +2266,7 @@ async function staticFile(req, res, url) {
   send(res, 404, { error: "Build not found. Run npm.cmd run build or use npm.cmd run dev." });
 }
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
     const requestOrigin = String(req.headers.origin || "").replace(/\/$/, "");
@@ -2273,11 +2315,36 @@ createServer(async (req, res) => {
   } catch (error) {
     send(res, 500, { error: error.message || "Internal server error" });
   }
-}).listen(port, "0.0.0.0", () => {
-  console.log(`Shashlik Like API listening on http://0.0.0.0:${port}`);
-  void pollTelegram();
-  setInterval(() => void pollTelegram(), 5000).unref();
 });
+
+let telegramPollTimer = null;
+
+server.listen(port, "0.0.0.0", () => {
+  console.log(`Shashlik Like API listening on http://0.0.0.0:${port}`);
+  if (telegramPollingEnabled) {
+    void pollTelegram();
+    telegramPollTimer = setInterval(() => void pollTelegram(), 5000);
+    telegramPollTimer.unref();
+  }
+});
+
+let shuttingDown = false;
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (telegramPollTimer) clearInterval(telegramPollTimer);
+  console.log(`Received ${signal}; stopping HTTP server`);
+  const forceExit = setTimeout(() => process.exit(1), 10_000);
+  forceExit.unref();
+  server.close(() => {
+    clearTimeout(forceExit);
+    process.exit(0);
+  });
+}
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
 
 
 

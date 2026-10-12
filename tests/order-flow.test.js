@@ -87,9 +87,26 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     assert.equal(categoryCreated.response.status, 201);
     const addonCreated = await adminRequest("/api/admin/addons", "POST", { name: "Тестовый соус", price: 25, group: "Соусы", isActive: true, isCustomerVisible: true });
     assert.equal(addonCreated.response.status, 201);
-    const productCreated = await adminRequest("/api/admin/products", "POST", { name: "Тестовый товар", slug: "test-product", description: "Для E2E", price: 100, unit: "1 шт", step: 1, categoryId: categoryCreated.body.category.id, imageUrl: "/assets/placeholder.svg", images: ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"], isActive: true, isAvailable: true, isFeatured: false, addonIds: [addonCreated.body.addon.id], sortOrder: 50 });
+    const productCreated = await adminRequest("/api/admin/products", "POST", { name: "Тестовый товар", slug: "test-product", description: "Для E2E", price: 100, unit: "1 шт", step: 1, categoryId: categoryCreated.body.category.id, imageUrl: "/assets/placeholder.svg", images: ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"], isActive: true, isAvailable: true, isFeatured: false, options: ["Стандартный"], addonIds: [addonCreated.body.addon.id], sortOrder: 50 });
     assert.equal(productCreated.response.status, 201);
     assert.deepEqual(productCreated.body.product.images, ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"]);
+
+    const invalidQuantityResponse = await fetch(baseUrl + "/api/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customerName: "Тест", phone: "+7 (900) 000-00-00", deliveryType: "delivery", address: "ул. Ленина, 12", items: [{ productId: "pork-neck", quantity: 150, addons: [] }] })
+    });
+    assert.equal(invalidQuantityResponse.status, 400);
+
+    const invalidModifierResponse = await fetch(baseUrl + "/api/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customerName: "Тест", phone: "+7 (900) 000-00-00", deliveryType: "delivery", address: "ул. Ленина, 12", items: [{ productId: productCreated.body.product.id, quantity: 1, option: "Подменённый вариант", addons: [addonCreated.body.addon.id, addonCreated.body.addon.id] }] })
+    });
+    assert.equal(invalidModifierResponse.status, 400);
+
+    const invalidUpload = await adminRequest("/api/admin/uploads", "POST", { dataUrl: "data:image/png;base64,bm90LWEtcG5n" });
+    assert.equal(invalidUpload.response.status, 400);
     const pointCreated = await adminRequest("/api/admin/pickup-points", "POST", { name: "Тестовая точка", address: "Воронеж", hours: "09:00–22:00", isActive: true });
     assert.equal(pointCreated.response.status, 201);
     const userCreated = await adminRequest("/api/admin/users", "POST", { login: "e2e-user", password: "temporary-password", firstName: "Тест", lastName: "Сотрудник", role: "EMPLOYEE", isActive: true });
