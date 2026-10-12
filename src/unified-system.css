@@ -664,7 +664,7 @@ button:disabled {
   align-items: center;
   display: grid;
   gap: 13px;
-  grid-template-columns: auto auto minmax(180px, 1fr);
+  grid-template-columns: auto auto;
   margin-top: 24px;
 }
 

@@ -245,7 +245,7 @@
 }
 
 .home-cart-button span {
-  color: #ddd8d0;
+  color: #000;
 }
 
 .home-hero {
@@ -6556,7 +6556,7 @@ html[data-theme="day"] .brand strong {
 }
 
 .menu-product-card .product-title {
-  color: #fffaf3;
+  color: #000;
   display: -webkit-box;
   font-size: 14px;
   font-weight: 650;
@@ -8724,7 +8724,7 @@ html[data-theme] .admin-form textarea {
 
 .home-story-copy h2,
 .home-contact-copy h2 {
-  color: #fff;
+  color: #000;
   font-size: 25px;
   font-weight: 700;
   line-height: 1.05;

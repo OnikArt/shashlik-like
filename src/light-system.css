@@ -833,7 +833,7 @@ img {
 .kiosk-showcase .kiosk-route strong,
 .kiosk-showcase .kiosk-card-copy > b,
 .kiosk-showcase .kiosk-card-photo > span {
-  color: #ffffff;
+  color: #000000;
 }
 
 .kiosk-showcase .production-heading > span,
