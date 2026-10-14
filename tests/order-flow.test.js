@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,13 +23,42 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
   const directory = await mkdtemp(path.join(os.tmpdir(), "shashlik-like-"));
   const port = 4300 + (process.pid % 500);
   const baseUrl = `http://127.0.0.1:${port}`;
+  const telegramRequests = [];
+  let telegramMessageId = 0;
+  let failNextTelegramMessage = false;
+  const telegramMock = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+    const method = String(req.url || "").split("/").at(-1);
+    telegramRequests.push({ method, body });
+    if (method === "sendMessage" && failNextTelegramMessage) {
+      failNextTelegramMessage = false;
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: false, description: "temporary mock failure" }));
+      return;
+    }
+    telegramMessageId += 1;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, result: method === "getUpdates" ? [] : { message_id: telegramMessageId, chat: { id: body.chat_id }, text: body.text || "" } }));
+  });
+  await new Promise((resolve, reject) => {
+    telegramMock.once("error", reject);
+    telegramMock.listen(0, "127.0.0.1", resolve);
+  });
+  const telegramAddress = telegramMock.address();
+  const telegramBaseUrl = `http://127.0.0.1:${telegramAddress.port}`;
   const child = spawn(process.execPath, ["server/server.js"], {
     cwd: process.cwd(),
     env: {
       ...process.env,
       PORT: String(port),
       DATA_STORE_PATH: path.join(directory, "store.json"),
-      TELEGRAM_DISABLED: "true",
+      TELEGRAM_DISABLED: "false",
+      TELEGRAM_POLLING_ENABLED: "false",
+      TELEGRAM_API_BASE_URL: telegramBaseUrl,
+      TELEGRAM_BOT_TOKEN: "test-token",
+      TELEGRAM_CHAT_ID: "1001",
       ADMIN_PASSWORD: "test-admin-password"
     },
     stdio: "ignore"
@@ -51,6 +81,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     const created = await createdResponse.json();
     assert.equal(createdResponse.status, 201);
     assert.match(created.order.trackingToken, /^[A-Za-z0-9_-]{40,}$/);
+    assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.text.includes(created.order.orderNumber)));
 
     const trackingResponse = await fetch(baseUrl + "/api/orders/track/" + created.order.trackingToken);
     const tracking = await trackingResponse.json();
@@ -87,9 +118,10 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     assert.equal(categoryCreated.response.status, 201);
     const addonCreated = await adminRequest("/api/admin/addons", "POST", { name: "Тестовый соус", price: 25, group: "Соусы", isActive: true, isCustomerVisible: true });
     assert.equal(addonCreated.response.status, 201);
-    const productCreated = await adminRequest("/api/admin/products", "POST", { name: "Тестовый товар", slug: "test-product", description: "Для E2E", price: 100, unit: "1 шт", step: 1, categoryId: categoryCreated.body.category.id, imageUrl: "/assets/placeholder.svg", images: ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"], isActive: true, isAvailable: true, isFeatured: false, options: ["Стандартный"], addonIds: [addonCreated.body.addon.id], sortOrder: 50 });
+    const productCreated = await adminRequest("/api/admin/products", "POST", { name: "Тестовый <товар>", slug: "test-product", description: "Для E2E", price: 100, unit: "1 шт", step: 1, categoryId: categoryCreated.body.category.id, imageUrl: "/assets/placeholder.svg", images: ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"], isActive: true, isAvailable: true, isFeatured: false, options: ["Стандартный"], addonIds: [addonCreated.body.addon.id], sortOrder: 50 });
     assert.equal(productCreated.response.status, 201);
     assert.deepEqual(productCreated.body.product.images, ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"]);
+    assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.text.includes("ДОБАВЛЕН ТОВАР") && request.body.text.includes("&lt;товар&gt;") && !request.body.text.includes("<товар>")));
 
     const invalidQuantityResponse = await fetch(baseUrl + "/api/orders", {
       method: "POST",
@@ -114,9 +146,12 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     const managerCreated = await adminRequest("/api/admin/users", "POST", { login: "e2e-manager", password: "temporary-password", firstName: "Тест", lastName: "Управляющий", role: "MANAGER", isActive: true });
     assert.equal(managerCreated.response.status, 201);
 
+    failNextTelegramMessage = true;
     const productUpdated = await adminRequest(`/api/admin/products/${productCreated.body.product.id}`, "PUT", { price: 125, imageUrl: "/assets/cinematic-grill-v1.png", images: ["/assets/cinematic-grill-v1.png", "/assets/placeholder.svg"] });
     assert.equal(productUpdated.body.product.price, 125);
     assert.equal(productUpdated.body.product.imageUrl, "/assets/cinematic-grill-v1.png");
+    const productUpdateNotifications = telegramRequests.filter((request) => request.method === "sendMessage" && request.body.text.includes("ИЗМЕНЁН ТОВАР") && request.body.text.includes("цена:") && request.body.text.includes("главное фото:") && request.body.text.includes("фотографии:"));
+    assert.ok(productUpdateNotifications.length >= 2, "temporary Telegram failure must be retried with complete product changes");
 
     const managerLoginResponse = await fetch(baseUrl + "/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ login: "e2e-manager", password: "temporary-password" }) });
     const managerLogin = await managerLoginResponse.json();
@@ -131,6 +166,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     const availabilityResponse = await fetch(baseUrl + `/api/admin/products/${productCreated.body.product.id}`, { method: "PUT", headers: managerHeaders, body: JSON.stringify({ isAvailable: false }) });
     assert.equal(availabilityResponse.status, 200);
     assert.equal((await availabilityResponse.json()).product.isAvailable, false);
+    assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.text.includes("наличие:") && request.body.text.includes("да → нет")));
     await adminRequest(`/api/admin/products/${productCreated.body.product.id}`, "PUT", { isAvailable: true });
     const categoryBlocked = await adminRequest(`/api/admin/categories/${categoryCreated.body.category.id}`, "DELETE");
     assert.equal(categoryBlocked.response.status, 409);
@@ -166,6 +202,25 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
       assert.equal(statusResponse.status, 200);
       expectedStatus = status;
     }
+    assert.ok(telegramRequests.some((request) => request.method === "editMessageText" && request.body.text.includes("Статус: Заказ выполнен")));
+
+    const cancelledOrderResponse = await fetch(baseUrl + "/api/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customerName: "Отмена", phone: "+7 (900) 000-00-01", deliveryType: "delivery", address: "ул. Ленина, 16", items: [{ productId: "pork-neck", quantity: 100, addons: [] }] })
+    });
+    const cancelledOrder = await cancelledOrderResponse.json();
+    assert.equal(cancelledOrderResponse.status, 201);
+    const adminAfterCancellationOrder = await adminRequest("/api/admin/bootstrap", "GET");
+    const savedCancelledOrder = adminAfterCancellationOrder.body.orders.find((order) => order.orderNumber === cancelledOrder.order.orderNumber);
+    assert.ok(savedCancelledOrder);
+    const cancelResponse = await fetch(baseUrl + "/api/admin/orders/" + savedCancelledOrder.id, {
+      method: "PUT",
+      headers: adminHeaders,
+      body: JSON.stringify({ status: "cancelled", expectedStatus: "new" })
+    });
+    assert.equal(cancelResponse.status, 200);
+    assert.ok(telegramRequests.some((request) => request.method === "editMessageText" && request.body.text.includes(cancelledOrder.order.orderNumber) && request.body.text.includes("Статус: Заказ отменён")));
 
     const archiveResponse = await adminRequest(`/api/admin/orders/${savedOrder.id}`, "DELETE");
     assert.equal(archiveResponse.response.status, 200);
@@ -195,6 +250,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
       child.kill();
       await new Promise((resolve) => child.once("exit", resolve));
     }
+    await new Promise((resolve) => telegramMock.close(resolve));
     await rm(directory, { recursive: true, force: true });
   }
 });

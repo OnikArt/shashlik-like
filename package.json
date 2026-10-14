@@ -12,6 +12,7 @@
     "dev:api": "node server/server.js",
     "build": "tsc -b && vite build",
     "start": "node server/server.js",
+    "start:layero": "npm run build && node server/server.js",
     "preview": "node server/server.js",
     "lint": "tsc -b --noEmit",
     "typecheck": "tsc -b --noEmit",

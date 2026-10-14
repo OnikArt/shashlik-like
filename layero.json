@@ -1,6 +1,11 @@
 {
   "$schema": "https://layero.ru/schema/layero-v2.json",
+  "installCommand": "npm ci --include=dev",
+  "nodeVersion": "22",
   "runtime": "node_web",
-  "startCommand": "npm start",
-  "port": 4174
+  "startCommand": "npm run start:layero",
+  "port": 4174,
+  "env": {
+    "NODE_ENV": "production"
+  }
 }

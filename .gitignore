@@ -1,6 +1,7 @@
 ﻿node_modules/
 dist/
 server/data/store.json
+public/uploads/
 .env
 .env.*
 .next

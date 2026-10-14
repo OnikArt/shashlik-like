@@ -1,8 +1,61 @@
-import test from "node:test";
+import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-const baseUrl = process.env.TEST_BASE_URL || "http://localhost:4174";
-const adminPassword = process.env.ADMIN_PASSWORD || "admin";
+const adminPassword = "test-admin-password";
+const port = 4800 + (process.pid % 500);
+const baseUrl = `http://127.0.0.1:${port}`;
+let directory;
+let child;
+let serverOutput = "";
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (child?.exitCode !== null) throw new Error("Test API stopped before it became ready:\n" + serverOutput);
+    try {
+      const response = await fetch(baseUrl + "/health");
+      if (response.ok) return;
+    } catch {
+      // The child process is still starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Test API did not start:\n" + serverOutput);
+}
+
+before(async () => {
+  directory = await mkdtemp(path.join(os.tmpdir(), "shashlik-like-server-"));
+  child = spawn(process.execPath, ["server/server.js"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      PORT: String(port),
+      DATA_STORE_PATH: path.join(directory, "store.json"),
+      ADMIN_PASSWORD: adminPassword,
+      ADMIN_TOKEN_SECRET: "test-admin-token-secret-with-more-than-32-characters",
+      PUBLIC_SITE_URL: baseUrl,
+      CORS_ALLOWED_ORIGINS: "http://localhost:5173",
+      TELEGRAM_DISABLED: "true",
+      TELEGRAM_POLLING_ENABLED: "false"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  child.stdout.on("data", (chunk) => { serverOutput += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { serverOutput += chunk.toString(); });
+  await waitForServer();
+});
+
+after(async () => {
+  if (child && child.exitCode === null) {
+    child.kill();
+    await new Promise((resolve) => child.once("exit", resolve));
+  }
+  if (directory) await rm(directory, { recursive: true, force: true });
+});
 
 async function request(path, init = {}) {
   const response = await fetch(baseUrl + path, init);
@@ -20,10 +73,14 @@ async function login() {
   return result.body.token;
 }
 
-test("health endpoint confirms that the service and store are available", async () => {
-  const { response, body } = await request("/api/health");
-  assert.equal(response.status, 200);
-  assert.equal(body.status, "ok");
+test("health endpoints confirm that the service, frontend and store are available", async () => {
+  for (const pathName of ["/health", "/api/health"]) {
+    const { response, body } = await request(pathName);
+    assert.equal(response.status, 200);
+    assert.equal(body.status, "ok");
+    assert.equal(body.checks.frontend, true);
+    assert.equal(body.checks.store, true);
+  }
 });
 
 test("API preflight allows the configured frontend and rejects unknown origins", async () => {

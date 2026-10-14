@@ -28,14 +28,42 @@ loadEnvFile();
 
 const storePath = process.env.DATA_STORE_PATH ? path.resolve(rootDir, process.env.DATA_STORE_PATH) : path.join(__dirname, "data", "store.json");
 const dataDir = path.dirname(storePath);
+const isProduction = process.env.NODE_ENV === "production";
 const port = Number(process.env.PORT || 4174);
 const tokenSecret = process.env.ADMIN_TOKEN_SECRET || "local-shashlik-like-secret";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin";
 const telegramPollingEnabled = process.env.TELEGRAM_POLLING_ENABLED !== "false";
+const telegramApiBaseUrl = String(process.env.TELEGRAM_API_BASE_URL || "https://api.telegram.org").trim().replace(/\/+$/, "");
 const corsOriginPatterns = String(process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173,http://localhost:4175")
   .split(",")
   .map((value) => value.trim().replace(/\/$/, ""))
   .filter(Boolean);
+
+function parseHttpOrigin(value, variableName, { required = false, allowWildcard = false } = {}) {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) {
+    if (required) throw new Error(`${variableName} must be set to a full https:// origin in production`);
+    return "";
+  }
+  const candidate = allowWildcard ? raw.replaceAll("*", "wildcard") : raw;
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error(`${variableName} must be a full URL including http:// or https://`);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error(`${variableName} must contain only an http(s) origin without credentials, path, query or hash`);
+  }
+  return raw;
+}
+
+const publicSiteOrigin = parseHttpOrigin(process.env.PUBLIC_SITE_URL, "PUBLIC_SITE_URL", { required: isProduction });
+corsOriginPatterns.forEach((origin) => parseHttpOrigin(origin, "CORS_ALLOWED_ORIGINS", { allowWildcard: true }));
+
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error("PORT must be an integer between 1 and 65535");
+}
 
 function isAllowedCorsOrigin(origin) {
   if (!origin) return false;
@@ -46,12 +74,21 @@ function isAllowedCorsOrigin(origin) {
   });
 }
 
-if (process.env.NODE_ENV === "production") {
+if (isProduction) {
   if (!process.env.ADMIN_TOKEN_SECRET || process.env.ADMIN_TOKEN_SECRET.length < 32) {
     throw new Error("ADMIN_TOKEN_SECRET must contain at least 32 characters in production");
   }
   if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD === "admin" || process.env.ADMIN_PASSWORD.length < 12) {
     throw new Error("ADMIN_PASSWORD must be changed and contain at least 12 characters in production");
+  }
+  if (new URL(publicSiteOrigin).protocol !== "https:" && !["localhost", "127.0.0.1", "::1"].includes(new URL(publicSiteOrigin).hostname)) {
+    throw new Error("PUBLIC_SITE_URL must use https:// in production");
+  }
+  if (telegramApiBaseUrl !== "https://api.telegram.org") {
+    throw new Error("TELEGRAM_API_BASE_URL cannot be overridden in production");
+  }
+  if (!existsSync(path.join(rootDir, "dist", "index.html"))) {
+    throw new Error("Production frontend build is missing: run npm run build before npm start");
   }
 }
 
@@ -1189,7 +1226,7 @@ function telegramOrderKeyboard(order) {
 async function telegramRequest(method, body) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN is not set");
-  const response = await fetch("https://api.telegram.org/bot" + token + "/" + method, {
+  const response = await fetch(telegramApiBaseUrl + "/bot" + token + "/" + method, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -1566,13 +1603,29 @@ function sanitizeProduct(input, fallback = {}) {
   };
 }
 
+async function sendHealth(res) {
+  const checks = {
+    frontend: !isProduction || existsSync(path.join(rootDir, "dist", "index.html")),
+    store: false
+  };
+  try {
+    const store = await readStore();
+    checks.store = Boolean(store && Array.isArray(store.products) && Array.isArray(store.orders) && Array.isArray(store.users));
+  } catch (error) {
+    console.error("Health store check failed:", error.message);
+  }
+  const ready = checks.frontend && checks.store;
+  return send(res, ready ? 200 : 503, {
+    status: ready ? "ok" : "unavailable",
+    service: "shashlik-like",
+    checks,
+    uptime: Math.round(process.uptime())
+  });
+}
+
 async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/health") {
-    return send(res, 200, {
-      status: "ok",
-      service: "shashlik-like",
-      uptime: Math.round(process.uptime())
-    });
+    return sendHealth(res);
   }
 
   const store = await readStore();
@@ -2225,7 +2278,14 @@ const mimeTypes = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
-  ".webp": "image/webp"
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".ttf": "font/ttf",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8"
 };
 
 async function staticFile(req, res, url) {
@@ -2233,7 +2293,7 @@ async function staticFile(req, res, url) {
   const publicDir = path.join(rootDir, "public");
   const requested = decodeURIComponent(url.pathname);
   if (requested === "/sitemap.xml") {
-    const origin = String(process.env.PUBLIC_SITE_URL || `http://${req.headers.host || `localhost:${port}`}`).replace(/\/$/, "");
+    const origin = publicSiteOrigin || `http://${req.headers.host || `localhost:${port}`}`;
     const pages = ["/", "/menu", "/delivery", "/pickup", "/about", "/contacts"];
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((page) => `  <url><loc>${origin}${page}</loc></url>`).join("\n")}\n</urlset>`;
     res.writeHead(200, { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" });
@@ -2286,10 +2346,10 @@ const server = createServer(async (req, res) => {
       res.end();
       return;
     }
-    const canonicalOrigin = String(process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
-    if (process.env.NODE_ENV === "production" && canonicalOrigin) {
-      const canonical = new URL(canonicalOrigin);
-      const incomingHost = String(req.headers.host || "").split(":")[0].toLowerCase();
+    if (isProduction && publicSiteOrigin) {
+      const canonical = new URL(publicSiteOrigin);
+      const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+      const incomingHost = String(forwardedHost || req.headers.host || "").split(":")[0].toLowerCase();
       const alternateHost = canonical.hostname.startsWith("www.") ? canonical.hostname.slice(4) : `www.${canonical.hostname}`;
       if (incomingHost === alternateHost) {
         res.writeHead(308, { location: `${canonical.origin}${url.pathname}${url.search}` });
@@ -2301,8 +2361,13 @@ const server = createServer(async (req, res) => {
     res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
     res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
     res.setHeader("cross-origin-opener-policy", "same-origin");
-    if (process.env.NODE_ENV === "production" && req.headers["x-forwarded-proto"] === "https") {
+    const forwardedProtocol = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    if (isProduction && forwardedProtocol === "https") {
       res.setHeader("strict-transport-security", "max-age=31536000; includeSubDomains");
+    }
+    if (req.method === "GET" && url.pathname === "/health") {
+      await sendHealth(res);
+      return;
     }
     if (url.pathname.startsWith("/admin") || url.pathname.startsWith("/order/") || url.pathname === "/checkout" || url.pathname === "/cart") {
       res.setHeader("x-robots-tag", "noindex, nofollow, noarchive");
