@@ -173,7 +173,7 @@ body {
 .home-button-ghost:hover,
 .production-outline-cta:hover {
   border-color: var(--color-primary);
-  color: var(--color-primary-hover);
+  color: #fff;
 }
 
 .button.danger {
@@ -434,7 +434,7 @@ button:disabled {
   align-items: start;
   display: grid;
   gap: clamp(32px, 5vw, 72px);
-  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.8fr);
+  /* grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.8fr); */
   margin: 0;
   max-width: none;
 }
@@ -660,13 +660,13 @@ button:disabled {
   width: 20px;
 }
 
-.product-detail-buy {
+/* .product-detail-buy {
   align-items: center;
   display: grid;
   gap: 13px;
   grid-template-columns: auto auto;
   margin-top: 24px;
-}
+} */
 
 .product-detail-buy > strong {
   color: var(--color-primary-hover);
@@ -680,11 +680,13 @@ button:disabled {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   min-height: 50px;
+  max-width: 200px;
 }
 
-.product-detail-buy .button {
-  min-height: 54px;
+.product-detail-buy .quantity span {
+  padding: 0 12px;
 }
+
 
 .product-related {
   margin-top: 72px;
@@ -704,8 +706,6 @@ button:disabled {
 
 .product-related-grid a {
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
   display: grid;
   gap: 7px;
   overflow: hidden;
@@ -1567,10 +1567,6 @@ button:disabled {
     grid-template-columns: 1fr auto;
   }
 
-  .product-detail-buy .button {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
 
   .product-related {
     margin-top: 52px;
@@ -1704,8 +1700,6 @@ html:has(.home-shell) {
 
 .home-scroll-cue svg {
   animation: home-scroll-arrow 1.8s ease-in-out infinite;
-  border: 1px solid rgba(255, 255, 255, 0.86);
-  border-radius: 999px;
   color: #fff;
   height: 42px;
   padding: 10px;
