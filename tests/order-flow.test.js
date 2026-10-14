@@ -24,6 +24,14 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
   const port = 4300 + (process.pid % 500);
   const baseUrl = `http://127.0.0.1:${port}`;
   const telegramRequests = [];
+  const telegramUpdates = [{
+    update_id: 1,
+    message: {
+      chat: { id: 2002 },
+      from: { id: 2002, username: "test_employee", first_name: "Тест" },
+      text: "/start"
+    }
+  }];
   let telegramMessageId = 0;
   let failNextTelegramMessage = false;
   const telegramMock = createServer(async (req, res) => {
@@ -32,6 +40,12 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
     const method = String(req.url || "").split("/").at(-1);
     telegramRequests.push({ method, body });
+    if (method === "getUpdates") {
+      const offset = Number(body.offset || 0);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, result: telegramUpdates.filter((update) => update.update_id >= offset) }));
+      return;
+    }
     if (method === "sendMessage" && failNextTelegramMessage) {
       failNextTelegramMessage = false;
       res.writeHead(500, { "content-type": "application/json" });
@@ -40,7 +54,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     }
     telegramMessageId += 1;
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, result: method === "getUpdates" ? [] : { message_id: telegramMessageId, chat: { id: body.chat_id }, text: body.text || "" } }));
+    res.end(JSON.stringify({ ok: true, result: { message_id: telegramMessageId, chat: { id: body.chat_id }, text: body.text || "" } }));
   });
   await new Promise((resolve, reject) => {
     telegramMock.once("error", reject);
@@ -55,7 +69,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
       PORT: String(port),
       DATA_STORE_PATH: path.join(directory, "store.json"),
       TELEGRAM_DISABLED: "false",
-      TELEGRAM_POLLING_ENABLED: "false",
+      TELEGRAM_POLLING_ENABLED: "true",
       TELEGRAM_API_BASE_URL: telegramBaseUrl,
       TELEGRAM_BOT_TOKEN: "test-token",
       TELEGRAM_CHAT_ID: "1001",
@@ -114,6 +128,20 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
       const response = await fetch(baseUrl + url, { method, headers: adminHeaders, body: body === undefined ? undefined : JSON.stringify(body) });
       return { response, body: await response.json() };
     };
+    let linkMessage;
+    for (let attempt = 0; attempt < 140; attempt += 1) {
+      linkMessage = telegramRequests.find((request) => request.method === "sendMessage" && request.body.chat_id === "2002" && request.body.text.startsWith("Код подключения:"));
+      if (linkMessage) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.ok(linkMessage, "first employee message must receive a Telegram link code");
+    const telegramLinkCode = linkMessage.body.text.match(/Код подключения: ([A-F0-9]+)/)?.[1];
+    assert.ok(telegramLinkCode);
+    const userCreated = await adminRequest("/api/admin/users", "POST", { login: "e2e-user", password: "temporary-password", firstName: "Тест", lastName: "Сотрудник", role: "EMPLOYEE", telegramLinkCode, isActive: true });
+    assert.equal(userCreated.response.status, 201);
+    assert.equal(userCreated.body.user.telegramChatId, "connected");
+    assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.chat_id === "2002" && request.body.text.includes("Добро пожаловать")));
+
     const categoryCreated = await adminRequest("/api/admin/categories", "POST", { name: "Тестовая категория", minPrice: "от 100 ₽", sortOrder: 50, isActive: true });
     assert.equal(categoryCreated.response.status, 201);
     const addonCreated = await adminRequest("/api/admin/addons", "POST", { name: "Тестовый соус", price: 25, group: "Соусы", isActive: true, isCustomerVisible: true });
@@ -121,7 +149,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     const productCreated = await adminRequest("/api/admin/products", "POST", { name: "Тестовый <товар>", slug: "test-product", description: "Для E2E", price: 100, unit: "1 шт", step: 1, categoryId: categoryCreated.body.category.id, imageUrl: "/assets/placeholder.svg", images: ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"], isActive: true, isAvailable: true, isFeatured: false, options: ["Стандартный"], addonIds: [addonCreated.body.addon.id], sortOrder: 50 });
     assert.equal(productCreated.response.status, 201);
     assert.deepEqual(productCreated.body.product.images, ["/assets/placeholder.svg", "/assets/cinematic-grill-v1.png"]);
-    assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.text.includes("ДОБАВЛЕН ТОВАР") && request.body.text.includes("&lt;товар&gt;") && !request.body.text.includes("<товар>")));
+    assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.chat_id === "2002" && request.body.text.includes("ДОБАВЛЕН ТОВАР") && request.body.text.includes("&lt;товар&gt;") && !request.body.text.includes("<товар>")));
 
     const invalidQuantityResponse = await fetch(baseUrl + "/api/orders", {
       method: "POST",
@@ -141,8 +169,6 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     assert.equal(invalidUpload.response.status, 400);
     const pointCreated = await adminRequest("/api/admin/pickup-points", "POST", { name: "Тестовая точка", address: "Воронеж", hours: "09:00–22:00", isActive: true });
     assert.equal(pointCreated.response.status, 201);
-    const userCreated = await adminRequest("/api/admin/users", "POST", { login: "e2e-user", password: "temporary-password", firstName: "Тест", lastName: "Сотрудник", role: "EMPLOYEE", isActive: true });
-    assert.equal(userCreated.response.status, 201);
     const managerCreated = await adminRequest("/api/admin/users", "POST", { login: "e2e-manager", password: "temporary-password", firstName: "Тест", lastName: "Управляющий", role: "MANAGER", isActive: true });
     assert.equal(managerCreated.response.status, 201);
 
@@ -167,6 +193,27 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     assert.equal(availabilityResponse.status, 200);
     assert.equal((await availabilityResponse.json()).product.isAvailable, false);
     assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.text.includes("наличие:") && request.body.text.includes("да → нет")));
+
+    telegramUpdates.push({
+      update_id: 2,
+      callback_query: {
+        id: "callback-accept-order",
+        from: { id: 2002, username: "test_employee" },
+        data: `os:${created.order.orderNumber}:accepted:new`
+      }
+    });
+    let callbackAnswer;
+    for (let attempt = 0; attempt < 140; attempt += 1) {
+      callbackAnswer = telegramRequests.find((request) => request.method === "answerCallbackQuery" && request.body.callback_query_id === "callback-accept-order");
+      if (callbackAnswer) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.ok(callbackAnswer, "linked employee must be able to use an inline order button");
+    assert.equal(callbackAnswer.body.text, "Заказ принят");
+    const acceptedTrackingResponse = await fetch(baseUrl + "/api/orders/track/" + created.order.trackingToken);
+    assert.equal((await acceptedTrackingResponse.json()).order.status, "accepted");
+    assert.ok(telegramRequests.some((request) => request.method === "editMessageText" && request.body.text.includes("Статус: Заказ принят")));
+
     await adminRequest(`/api/admin/products/${productCreated.body.product.id}`, "PUT", { isAvailable: true });
     const categoryBlocked = await adminRequest(`/api/admin/categories/${categoryCreated.body.category.id}`, "DELETE");
     assert.equal(categoryBlocked.response.status, 409);
@@ -192,8 +239,8 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     const activeArchive = await adminRequest(`/api/admin/orders/${savedOrder.id}`, "DELETE");
     assert.equal(activeArchive.response.status, 409);
 
-    let expectedStatus = "new";
-    for (const status of ["accepted", "preparing", "ready", "delivering", "completed"]) {
+    let expectedStatus = "accepted";
+    for (const status of ["preparing", "ready", "delivering", "completed"]) {
       const statusResponse = await fetch(baseUrl + "/api/admin/orders/" + savedOrder.id, {
         method: "PUT",
         headers: { "content-type": "application/json", authorization: "Bearer " + login.token },
