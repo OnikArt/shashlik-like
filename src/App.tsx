@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Link,
   NavLink,
@@ -104,6 +105,8 @@ type PickupPoint = {
   phone: string;
   hours: string;
   mapUrl: string;
+  yandexFoodUrl: string;
+  deliveryClubUrl: string;
   comment?: string;
   description?: string;
   imageUrl?: string;
@@ -114,6 +117,8 @@ type PickupPoint = {
 type Settings = {
   brand: string;
   phone: string;
+  secondaryPhone1: string;
+  secondaryPhone2: string;
   telegramBrand: string;
   telegramOrders: string;
   workHours: string;
@@ -123,6 +128,11 @@ type Settings = {
   yandexFoodUrl: string;
   deliveryUrl: string;
   socialUrl: string;
+  maxUrl: string;
+  instagramUrl: string;
+  ownerTelegram: string;
+  minOrderAmount: number;
+  maxOrderAmount: number;
 };
 type Bootstrap = {
   categories: Category[];
@@ -455,6 +465,8 @@ function clearActiveOrderToken(token?: string) {
 const defaultSettings: Settings = {
   brand: "Шашлык Лайк",
   phone: "+7 995 669-12-42",
+  secondaryPhone1: "",
+  secondaryPhone2: "",
   telegramBrand: "@ShashlikLike",
   telegramOrders: "@iamartush1an",
   workHours: "09:00–22:00",
@@ -464,6 +476,11 @@ const defaultSettings: Settings = {
   yandexFoodUrl: "",
   deliveryUrl: "",
   socialUrl: "",
+  maxUrl: "",
+  instagramUrl: "",
+  ownerTelegram: "@iamartush1an",
+  minOrderAmount: 0,
+  maxOrderAmount: 20000,
 };
 
 function useBootstrap() {
@@ -1752,42 +1769,14 @@ function Home({
         <KioskShowcase data={data} />
 
         <div className="home-bottom-grid home-container">
-          <section className="home-story">
+          <section className="home-story home-story-editorial" id="home-about">
             <div className="home-story-copy">
               <span>О нас</span>
-              <h2>Больше чем шашлык</h2>
+              <h2>Больше, чем шашлык</h2>
               <p>
-                Шашлык Лайк × ШашлычОК — две сети, которые объединяют любовь к
-                настоящему шашлыку, качественному мясу и уютной атмосфере.
+                Шашлык Лайк × ШашлычОК — две сети, объединённые любовью к
+                настоящему шашлыку, качественному мясу и тёплой атмосфере.
               </p>
-              <Link
-                className="home-button home-button-primary compact"
-                to="/about"
-              >
-                Узнать больше <ArrowRight />
-              </Link>
-            </div>
-            <div className="home-story-facts">
-              <HomeBenefit
-                icon={<Flame />}
-                title="Качество"
-                text="вкус, который вы помните"
-              />
-              <HomeBenefit
-                icon={<Leaf />}
-                title="Натуральные продукты"
-                text="свежее мясо и овощи"
-              />
-              <HomeBenefit
-                icon={<Clock3 />}
-                title="Опыт"
-                text="готовим на углях"
-              />
-              <HomeBenefit
-                icon={<Heart />}
-                title="Команда"
-                text="готовим как для себя"
-              />
             </div>
             <div className="home-story-image">
               <img
@@ -1799,6 +1788,26 @@ function Home({
                 decoding="async"
               />
             </div>
+            <div className="home-story-values" aria-label="Наши принципы">
+              {[
+                ["01", "Качество", "Вкус, который вы помните."],
+                ["02", "Натуральные продукты", "Свежее мясо и овощи."],
+                ["03", "Опыт", "Готовим на углях."],
+                ["04", "Команда", "Готовим как для себя."],
+              ].map(([number, title, text]) => (
+                <article key={number}>
+                  <span>{number}</span>
+                  <h3>{title}</h3>
+                  <p>{text}</p>
+                </article>
+              ))}
+            </div>
+            <Link
+              className="home-button home-button-primary compact home-story-cta"
+              to="/about"
+            >
+              Узнать больше <ArrowRight />
+            </Link>
           </section>
 
           <section className="home-contact">
@@ -2160,7 +2169,7 @@ function PromotionsShowcase({
           <Heading
             id={standalone ? "promotions-page-title" : "promotions-title"}
           >
-            Вкусные <strong>предложения</strong>
+            {standalone ? <>Акции и <strong>предложения</strong></> : <>Вкусные <strong>предложения</strong></>}
           </Heading>
           <span>
             Только подтверждённые цены из актуального меню. Новые акции появятся
@@ -2187,7 +2196,7 @@ function PromotionsShowcase({
                 {candidates.map((product, index) => (
                   <Link
                     to={`/product/${product.slug}`}
-                    className={`promotion-card${index === active ? " active" : ""}`}
+                    className={`promotion-card${index === active ? " active" : ""}${index === 0 ? " featured" : ""}`}
                     key={product.id}
                     onClick={() => setActive(index)}
                   >
@@ -2204,10 +2213,13 @@ function PromotionsShowcase({
                         (product.isFeatured ? "ПОПУЛЯРНОЕ" : "В МЕНЮ")}
                     </span>
                     <div>
+                      <span className="promotion-kicker">Специальное предложение</span>
                       <h3>{product.name}</h3>
                       <p>{product.description}</p>
-                      <strong>{money(product.price)}</strong>
-                      <small>{product.unit}</small>
+                      <footer>
+                        <span><strong>{money(product.price)}</strong><small>{product.unit}</small></span>
+                        <b>Подробнее <ArrowRight /></b>
+                      </footer>
                     </div>
                   </Link>
                 ))}
@@ -2346,13 +2358,39 @@ function KioskShowcase({
     .filter((point) => point.isActive)
     .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   const [active, setActive] = useState(0);
+  const [details, setDetails] = useState<PickupPoint | null>(null);
   const touchStart = useRef(0);
+  const detailsClose = useRef<HTMLButtonElement>(null);
+  const detailsTrigger = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (active > points.length - 1) setActive(Math.max(points.length - 1, 0));
   }, [active, points.length]);
   const select = (index: number) =>
     setActive(Math.max(0, Math.min(index, points.length - 1)));
   const Heading = standalone ? "h1" : "h2";
+  useEffect(() => {
+    if (!details) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    detailsClose.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDetails(null);
+      if (event.key !== "Tab") return;
+      const dialog = detailsClose.current?.closest<HTMLElement>("[role='dialog']");
+      const focusable = dialog?.querySelectorAll<HTMLElement>("button, a[href], input, [tabindex]:not([tabindex='-1'])");
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+      detailsTrigger.current?.focus();
+    };
+  }, [details]);
   return (
     <section
       className={`production-section kiosk-showcase${standalone ? " standalone" : ""}`}
@@ -2463,6 +2501,12 @@ function KioskShowcase({
                         <a href={routeUrl} target="_blank" rel="noreferrer">
                           Показать на карте <MapPin />
                         </a>
+                        <button type="button" className="kiosk-details-button" onClick={(event) => {
+                          detailsTrigger.current = event.currentTarget;
+                          setDetails(point);
+                        }}>
+                          Подробнее о точке <ArrowRight />
+                        </button>
                       </div>
                     </article>
                   );
@@ -2493,6 +2537,32 @@ function KioskShowcase({
               onSelect={select}
               label="Показать киоск"
             />
+            {details && createPortal((
+              <div className="kiosk-modal-shell" role="presentation" onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setDetails(null);
+              }}>
+                <section className="kiosk-modal" role="dialog" aria-modal="true" aria-labelledby="kiosk-modal-title">
+                  <button ref={detailsClose} className="kiosk-modal-close" type="button" onClick={() => setDetails(null)} aria-label="Закрыть подробности">
+                    <X />
+                  </button>
+                  <div className="kiosk-modal-media"><img src={details.imageUrl || "/assets/home-kiosk-evening.webp"} alt="" /></div>
+                  <div className="kiosk-modal-copy">
+                    <p className="eyebrow">Шашлык Лайк × ШашлычОК</p>
+                    <h3 id="kiosk-modal-title">{details.address}</h3>
+                    {(details.description || details.comment) && <p>{details.description || details.comment}</p>}
+                    <dl>
+                      {details.hours && <div><dt>Режим работы</dt><dd>{details.hours}</dd></div>}
+                      {details.phone && <div><dt>Телефон</dt><dd><a href={phoneHref(details.phone)}>{details.phone}</a></dd></div>}
+                    </dl>
+                    <div className="kiosk-modal-actions">
+                      {details.mapUrl && <a className="button primary" href={details.mapUrl} target="_blank" rel="noreferrer">Маршрут <MapPin /></a>}
+                      {details.yandexFoodUrl && <a className="button ghost" href={details.yandexFoodUrl} target="_blank" rel="noreferrer">Яндекс Еда</a>}
+                      {details.deliveryClubUrl && <a className="button ghost" href={details.deliveryClubUrl} target="_blank" rel="noreferrer">Delivery Club</a>}
+                    </div>
+                  </div>
+                </section>
+              </div>
+            ), document.body)}
           </>
         ) : (
           <div className="production-empty">
@@ -3481,6 +3551,11 @@ function ProductPage({
                 ))}
               </div>
             )}
+            <aside className="product-gallery-notes" aria-label="Преимущества блюда">
+              <div><Flame /><span><strong>Готовим на углях</strong><small>Яркий вкус и аромат живого огня</small></span></div>
+              <div><Leaf /><span><strong>Свежие продукты</strong><small>Готовим после оформления заказа</small></span></div>
+              <div><ShoppingBag /><span><strong>Удобный заказ</strong><small>Доставка или самовывоз из киоска</small></span></div>
+            </aside>
           </div>
           <div className="product-detail-copy">
             <p className="eyebrow">Настоящий вкус на углях</p>
@@ -3513,7 +3588,7 @@ function ProductPage({
               <fieldset className="product-detail-addons">
                 <legend>Добавьте к заказу</legend>
                 {addons.map((addon) => (
-                  <label key={addon.id}>
+                  <label className={selectedAddons.includes(addon.id) ? "selected" : ""} key={addon.id}>
                     <input
                       type="checkbox"
                       checked={selectedAddons.includes(addon.id)}
@@ -3525,6 +3600,7 @@ function ProductPage({
                         )
                       }
                     />
+                    <i aria-hidden="true"><Check /></i>
                     <span>{addon.name}</span>
                     <b>+{money(addon.price)}</b>
                   </label>
@@ -3686,6 +3762,16 @@ function CartDrawer({
         aria-label="Закрыть корзину"
       />
       <aside className="cart-drawer">
+        <header className="cart-drawer-header">
+          <div>
+            <h2>Корзина</h2>
+            <small>
+              {cart.detailed.length
+                ? `${cart.detailed.length} поз. · ${money(cart.subtotal)}`
+                : "Ваш заказ"}
+            </small>
+          </div>
+        </header>
         <button
           ref={closeRef}
           className="close"
@@ -3758,12 +3844,10 @@ function CartContent({
     .slice(0, 3);
   if (!cart.detailed.length) {
     return (
-      <div className="empty-cart">
-        <span className="empty-cart-icon" aria-hidden="true">
-          <ShoppingBag />
-        </span>
-        <h1>Корзина пока пуста</h1>
-        <p>Добавьте любимые блюда из меню, и они появятся здесь.</p>
+      <div className={`empty-cart${compact ? " compact" : ""}`}>
+        <img className="empty-cart-visual" src="/assets/basket-3d.png" alt="" aria-hidden="true" />
+        {compact ? <h2>Пока пусто</h2> : <h1>Корзина пока пуста</h1>}
+        <p>{compact ? "Выберите блюда — мы сохраним их здесь." : "Добавьте любимые блюда из меню, и они появятся здесь."}</p>
         <Link className="button primary" to="/menu" onClick={onCheckout}>
           Смотреть меню <ArrowRight aria-hidden="true" />
         </Link>
@@ -3772,15 +3856,17 @@ function CartContent({
   }
   return (
     <div className={compact ? "cart compact" : "cart"}>
-      <div className="cart-heading">
-        <div>
-          <h1 id={titleId}>ВАШ ЗАКАЗ</h1>
-          <p>
-            {cart.detailed.length} поз. · {money(cart.subtotal)}
-          </p>
+      {!compact && (
+        <div className="cart-heading">
+          <div>
+            <h1 id={titleId}>ВАШ ЗАКАЗ</h1>
+            <p>
+              {cart.detailed.length} поз. · {money(cart.subtotal)}
+            </p>
+          </div>
+          <ShoppingBag aria-hidden="true" />
         </div>
-        <ShoppingBag aria-hidden="true" />
-      </div>
+      )}
       <div className="cart-items">
         {cart.detailed.map((item, index) => (
           <article key={`${item.productId}-${index}`} className="cart-row">
@@ -3979,6 +4065,16 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
     if (busy) return;
     setBusy(true);
     setError("");
+    if (cart.subtotal < data.settings.minOrderAmount) {
+      setError(`Минимальная сумма заказа — ${money(data.settings.minOrderAmount)}.`);
+      setBusy(false);
+      return;
+    }
+    if (cart.subtotal > data.settings.maxOrderAmount) {
+      setError(`Максимальная сумма заказа — ${money(data.settings.maxOrderAmount)}.`);
+      setBusy(false);
+      return;
+    }
     if (deliveryType === "delivery" && addressState.status !== "valid") {
       const valid = await validateAddress();
       if (!valid) {
@@ -9063,6 +9159,8 @@ function AdminPickup({
     phone: "",
     hours: admin.settings.workHours,
     mapUrl: "",
+    yandexFoodUrl: "",
+    deliveryClubUrl: "",
     isActive: true,
   };
   const [point, setPoint] = useState<PickupPoint | null>(null);
@@ -9275,6 +9373,30 @@ function AdminPickup({
                 }
               />
             </label>
+            <div className="two-fields">
+              <label>
+                Яндекс Еда для этой точки
+                <input
+                  type="url"
+                  value={point.yandexFoodUrl}
+                  onChange={(event) =>
+                    setPoint({ ...point, yandexFoodUrl: event.target.value })
+                  }
+                  placeholder="https://…"
+                />
+              </label>
+              <label>
+                Delivery Club для этой точки
+                <input
+                  type="url"
+                  value={point.deliveryClubUrl}
+                  onChange={(event) =>
+                    setPoint({ ...point, deliveryClubUrl: event.target.value })
+                  }
+                  placeholder="https://…"
+                />
+              </label>
+            </div>
             <label>
               Порядок
               <input
@@ -9333,8 +9455,7 @@ function AdminSettings({
       <div className="admin-section-title">
         <h2>Настройки</h2>
         <p>
-          Контакты, доставка, ссылки агрегаторов и Telegram-данные хранятся на
-          сервере.
+          Основные контакты, социальные сети и ограничения суммы заказа.
         </p>
       </div>
       <form
@@ -9348,42 +9469,28 @@ function AdminSettings({
             });
         }}
       >
-        {(
-          [
-            "phone",
-            "telegramBrand",
-            "telegramOrders",
-            "workHours",
-            "yandexFoodUrl",
-            "deliveryUrl",
-            "socialUrl",
-          ] as const
-        ).map((key) => (
-          <input
-            key={key}
-            disabled={!editable}
-            inputMode={key === "phone" ? "tel" : undefined}
-            value={settings[key]}
-            onChange={(event) =>
-              setSettings({
-                ...settings,
-                [key]:
-                  key === "phone"
-                    ? formatRussianPhone(event.target.value)
-                    : event.target.value,
-              })
-            }
-            placeholder={key === "phone" ? "+7 (___) ___-__-__" : key}
-          />
-        ))}
-        <textarea
-          disabled={!editable}
-          value={settings.deliveryRegions}
-          onChange={(event) =>
-            setSettings({ ...settings, deliveryRegions: event.target.value })
-          }
-          placeholder="Районы"
-        />
+        <fieldset className="settings-group">
+          <legend>Контакты</legend>
+          {(["phone", "secondaryPhone1", "secondaryPhone2"] as const).map((key, index) => (
+            <label key={key}>
+              {index === 0 ? "Основной номер" : `Дополнительный номер ${index}`}
+              <input disabled={!editable} inputMode="tel" value={settings[key]}
+                onChange={(event) => setSettings({ ...settings, [key]: formatRussianPhone(event.target.value) })}
+                placeholder="+7 (___) ___-__-__" />
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className="settings-group">
+          <legend>Социальные сети</legend>
+          {(["telegramBrand", "maxUrl", "instagramUrl", "ownerTelegram"] as const).map((key) => (
+            <label key={key}>
+              {{ telegramBrand: "Telegram заведения", maxUrl: "MAX заведения", instagramUrl: "Instagram заведения", ownerTelegram: "Telegram владельца" }[key]}
+              <input disabled={!editable} value={settings[key]}
+                onChange={(event) => setSettings({ ...settings, [key]: event.target.value })}
+                placeholder={key.includes("Url") ? "https://…" : "@username"} />
+            </label>
+          ))}
+        </fieldset>
         <div className="two-fields">
           <input
             disabled={!editable}
@@ -9409,6 +9516,16 @@ function AdminSettings({
             }
             placeholder="Бесплатно от"
           />
+        </div>
+        <div className="two-fields">
+          <label>Минимальная сумма заказа
+            <input disabled={!editable} type="number" min="0" value={settings.minOrderAmount}
+              onChange={(event) => setSettings({ ...settings, minOrderAmount: Number(event.target.value) })} />
+          </label>
+          <label>Максимальная сумма заказа
+            <input disabled={!editable} type="number" min="0" value={settings.maxOrderAmount}
+              onChange={(event) => setSettings({ ...settings, maxOrderAmount: Number(event.target.value) })} />
+          </label>
         </div>
         {editable && (
           <button className="button primary">Сохранить настройки</button>

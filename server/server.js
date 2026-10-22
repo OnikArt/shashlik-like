@@ -58,6 +58,17 @@ function parseHttpOrigin(value, variableName, { required = false, allowWildcard 
   return raw;
 }
 
+function optionalExternalUrl(value, fieldName) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  let parsed;
+  try { parsed = new URL(raw); } catch { throw new Error(`${fieldName}: укажите полную ссылку с https://`); }
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error(`${fieldName}: допустимы только безопасные http(s)-ссылки без логина и пароля`);
+  }
+  return parsed.toString();
+}
+
 const publicSiteOrigin = parseHttpOrigin(process.env.PUBLIC_SITE_URL, "PUBLIC_SITE_URL", { required: isProduction });
 corsOriginPatterns.forEach((origin) => parseHttpOrigin(origin, "CORS_ALLOWED_ORIGINS", { allowWildcard: true }));
 
@@ -171,6 +182,8 @@ const confirmedPickupPoints = [
     phone: "+7 995 669-12-42",
     hours: "Круглосуточно",
     mapUrl: "",
+    yandexFoodUrl: "",
+    deliveryClubUrl: "",
     comment: "на кольце «Бульвара Победы»",
     isActive: true
   },
@@ -181,6 +194,8 @@ const confirmedPickupPoints = [
     phone: "+7 995 669-12-42",
     hours: "09:00–22:00",
     mapUrl: "",
+    yandexFoodUrl: "",
+    deliveryClubUrl: "",
     comment: "рядом с ТЦ «Москва»",
     isActive: true
   },
@@ -191,6 +206,8 @@ const confirmedPickupPoints = [
     phone: "+7 995 669-12-42",
     hours: "09:00–22:00",
     mapUrl: "",
+    yandexFoodUrl: "",
+    deliveryClubUrl: "",
     comment: "",
     isActive: true
   },
@@ -201,13 +218,15 @@ const confirmedPickupPoints = [
     phone: "+7 995 669-12-42",
     hours: "09:00–22:00",
     mapUrl: "",
+    yandexFoodUrl: "",
+    deliveryClubUrl: "",
     comment: "",
     isActive: true
   }
 ];
 
 const seedStore = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   categories: [
     { id: "shashlik", name: "Шашлыки", minPrice: "От 120 ₽ / 100 г", sortOrder: 1, isActive: true },
     { id: "shawarma", name: "Шаурма", minPrice: "От 240 ₽", sortOrder: 2 },
@@ -567,6 +586,8 @@ const seedStore = {
   settings: {
     brand: "Шашлык Лайк",
     phone: "+7 995 669-12-42",
+    secondaryPhone1: "",
+    secondaryPhone2: "",
     telegramBrand: "@ShashlikLike",
     telegramOrders: "@iamartush1an",
     workHours: "09:00–22:00",
@@ -575,7 +596,12 @@ const seedStore = {
     deliveryRegions: "Правый берег Воронежа\nЦентральный район",
     yandexFoodUrl: "",
     deliveryUrl: "",
-    socialUrl: ""
+    socialUrl: "",
+    maxUrl: "",
+    instagramUrl: "",
+    ownerTelegram: "@iamartush1an",
+    minOrderAmount: 0,
+    maxOrderAmount: 20000
   },
   users: [createOwnerUser()],
   auditLog: [],
@@ -644,6 +670,27 @@ async function readStore() {
       if (!Number.isFinite(point.sortOrder)) point.sortOrder = 999;
     }
     store.schemaVersion = 3;
+    changed = true;
+  }
+  if (Number(store.schemaVersion || 0) < 4) {
+    store.settings ||= {};
+    const settingDefaults = {
+      secondaryPhone1: "",
+      secondaryPhone2: "",
+      maxUrl: "",
+      instagramUrl: "",
+      ownerTelegram: store.settings.telegramOrders || "",
+      minOrderAmount: 0,
+      maxOrderAmount: 20000
+    };
+    for (const [key, value] of Object.entries(settingDefaults)) {
+      if (store.settings[key] === undefined) store.settings[key] = value;
+    }
+    for (const point of store.pickupPoints || []) {
+      if (typeof point.yandexFoodUrl !== "string") point.yandexFoodUrl = "";
+      if (typeof point.deliveryClubUrl !== "string") point.deliveryClubUrl = "";
+    }
+    store.schemaVersion = 4;
     changed = true;
   }
   if (!Array.isArray(store.users) || !store.users.length) {
@@ -1702,6 +1749,10 @@ async function api(req, res, url) {
       const created = await mutateStore(async (freshStore) => {
         const calculated = calculateOrder(freshStore, payload);
         if (!calculated.items.length) throw new Error("Корзина пуста");
+        const minimum = Math.max(0, Number(freshStore.settings.minOrderAmount || 0));
+        const maximum = Math.max(minimum, Number(freshStore.settings.maxOrderAmount || Number.MAX_SAFE_INTEGER));
+        if (calculated.subtotal < minimum) throw new Error(`Минимальная сумма заказа — ${minimum} ₽`);
+        if (calculated.subtotal > maximum) throw new Error(`Максимальная сумма заказа — ${maximum} ₽`);
         const customerName = String(payload.customerName || "").trim().slice(0, 80);
         const phone = String(payload.phone || "").trim();
         if (!customerName || phone.replace(/\D/g, "").length !== 11) throw new Error("Укажите имя и корректный российский номер телефона");
@@ -2215,11 +2266,17 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
   if (req.method === "PUT" && url.pathname === "/api/admin/settings") {
     if (!ensurePermission(adminUser, res, "settings.manage")) return;
     const payload = await readJson(req);
+    const urlFields = ["maxUrl", "instagramUrl"];
+    for (const field of urlFields) {
+      if (field in payload) payload[field] = optionalExternalUrl(payload[field], field);
+    }
     store.settings = {
       ...store.settings,
       ...payload,
       deliveryPrice: Number(payload.deliveryPrice ?? store.settings.deliveryPrice),
-      freeDeliveryFrom: Number(payload.freeDeliveryFrom ?? store.settings.freeDeliveryFrom)
+      freeDeliveryFrom: Number(payload.freeDeliveryFrom ?? store.settings.freeDeliveryFrom),
+      minOrderAmount: Number(payload.minOrderAmount ?? store.settings.minOrderAmount),
+      maxOrderAmount: Number(payload.maxOrderAmount ?? store.settings.maxOrderAmount)
     };
     await writeStore(store);
     return send(res, 200, { settings: store.settings });
@@ -2234,7 +2291,9 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
       address: String(payload.address || ""),
       phone: String(payload.phone || ""),
       hours: String(payload.hours || store.settings.workHours),
-      mapUrl: String(payload.mapUrl || ""),
+      mapUrl: optionalExternalUrl(payload.mapUrl, "Карта"),
+      yandexFoodUrl: optionalExternalUrl(payload.yandexFoodUrl, "Яндекс Еда"),
+      deliveryClubUrl: optionalExternalUrl(payload.deliveryClubUrl, "Delivery Club"),
       comment: String(payload.comment || ""),
       description: String(payload.description || ""),
       imageUrl: String(payload.imageUrl || ""),
@@ -2255,6 +2314,9 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
     if (req.method === "PUT") {
       if (!ensurePermission(adminUser, res, "settings.manage")) return;
       const payload = await readJson(req);
+      for (const field of ["mapUrl", "yandexFoodUrl", "deliveryClubUrl"]) {
+        if (field in payload) payload[field] = optionalExternalUrl(payload[field], field);
+      }
       store.pickupPoints[pointIndex] = { ...store.pickupPoints[pointIndex], ...payload };
       await writeStore(store);
       return send(res, 200, { point: store.pickupPoints[pointIndex] });

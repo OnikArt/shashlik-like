@@ -169,6 +169,47 @@ test("admin bootstrap does not expose Telegram secrets or one-time links", async
   assert.ok(result.body.analyticsSummary);
 });
 
+test("settings and per-kiosk aggregator links persist and are exposed publicly", async () => {
+  const token = await login();
+  const headers = { "content-type": "application/json", authorization: "Bearer " + token };
+  const settingsResult = await request("/api/admin/settings", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      secondaryPhone1: "+7 900 123-45-67",
+      ownerTelegram: "@owner_test",
+      minOrderAmount: 700,
+      maxOrderAmount: 15000,
+      maxUrl: "https://max.ru/shashlik-like"
+    })
+  });
+  assert.equal(settingsResult.response.status, 200);
+  const admin = await request("/api/admin/bootstrap", { headers: { authorization: "Bearer " + token } });
+  const point = admin.body.pickupPoints[0];
+  const pointResult = await request("/api/admin/pickup-points/" + encodeURIComponent(point.id), {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ yandexFoodUrl: "https://eda.yandex.ru/place/test", deliveryClubUrl: "https://market-delivery.yandex.ru/test" })
+  });
+  assert.equal(pointResult.response.status, 200);
+  const publicResult = await request("/api/bootstrap");
+  assert.equal(publicResult.body.settings.secondaryPhone1, "+7 900 123-45-67");
+  assert.equal(publicResult.body.settings.minOrderAmount, 700);
+  assert.equal(publicResult.body.pickupPoints[0].yandexFoodUrl, "https://eda.yandex.ru/place/test");
+});
+
+test("unsafe kiosk links are rejected", async () => {
+  const token = await login();
+  const admin = await request("/api/admin/bootstrap", { headers: { authorization: "Bearer " + token } });
+  const result = await request("/api/admin/pickup-points/" + encodeURIComponent(admin.body.pickupPoints[0].id), {
+    method: "PUT",
+    headers: { "content-type": "application/json", authorization: "Bearer " + token },
+    body: JSON.stringify({ mapUrl: "javascript:alert(1)" })
+  });
+  assert.equal(result.response.status, 500);
+  assert.match(result.body.error, /http/i);
+});
+
 test("private tracking DTO exposes order details but hides customer identity", async () => {
   const token = await login();
   const admin = await request("/api/admin/bootstrap", { headers: { authorization: "Bearer " + token } });

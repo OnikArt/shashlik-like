@@ -9,6 +9,7 @@ import "./commerce-system.css";
 import "./frontend-production.css";
 import "./unified-system.css";
 import "./light-system.css";
+import "./reference-redesign.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
