@@ -5994,7 +5994,17 @@ function Admin({
 
   useEffect(() => {
     if (token) void load(token);
-  }, []);
+    if (!token) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load(token);
+    };
+    const timer = window.setInterval(refresh, 10_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [token]);
 
   async function login(event: FormEvent) {
     event.preventDefault();

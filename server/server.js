@@ -1320,8 +1320,18 @@ function connectedChats(store, filter = () => true) {
 async function sendOrderTelegram(store, order) {
   if (process.env.TELEGRAM_DISABLED === "true") return { sent: false, reason: "disabled", messages: [] };
   const recipients = connectedChats(store);
-  if (!recipients.length && process.env.TELEGRAM_CHAT_ID) recipients.push(process.env.TELEGRAM_CHAT_ID);
+  if (process.env.TELEGRAM_CHAT_ID) recipients.push(process.env.TELEGRAM_CHAT_ID);
   const uniqueRecipients = [...new Set(recipients.map(String).filter(Boolean))];
+  if (!uniqueRecipients.length) {
+    return {
+      sent: false,
+      sentCount: 0,
+      recipientCount: 0,
+      failedChatIds: [],
+      messages: [],
+      reason: "no_recipients"
+    };
+  }
   const settled = await Promise.allSettled(uniqueRecipients.map((chatId) => telegramRequestWithRetry("sendMessage", {
     chat_id: chatId,
     text: telegramMessage(order),
