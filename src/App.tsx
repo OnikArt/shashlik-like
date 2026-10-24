@@ -3815,16 +3815,27 @@ function CartPage({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
         <div className="commerce-backdrop" aria-hidden="true">
           <img src="/assets/home-hero-cinematic.webp" alt="" />
         </div>
-        <section
-          className="cart-page-panel home-container"
-          aria-labelledby="cart-page-title"
-        >
-          <Link className="cart-page-close" to="/menu" aria-label="Закрыть корзину и вернуться в меню">
-            <X aria-hidden="true" />
-            <span>Продолжить покупки</span>
-          </Link>
+        <div className="cart-page-shell home-container">
+          <div className="cart-page-intro">
+            <Link className="cart-page-close" to="/menu" aria-label="Закрыть корзину и вернуться в меню">
+              <ArrowLeft aria-hidden="true" />
+              <span>Продолжить покупки</span>
+            </Link>
+            <p>{cart.detailed.length ? "Ваш заказ" : "Корзина"}</p>
+            <h1>{cart.detailed.length ? "Почти готово" : "Пока пусто"}</h1>
+            <span>
+              {cart.detailed.length
+                ? "Проверьте состав заказа — количество и дополнения можно изменить перед оформлением."
+                : "Выберите любимые блюда в меню — мы аккуратно соберём заказ здесь."}
+            </span>
+          </div>
+          <section
+            className="cart-page-panel"
+            aria-labelledby="cart-page-title"
+          >
           <CartContent data={data} cart={cart} titleId="cart-page-title" />
-        </section>
+          </section>
+        </div>
       </main>
       <HomeFooter settings={data.settings} />
     </div>
@@ -3865,6 +3876,100 @@ function CartContent({
       </div>
     );
   }
+  const cartRows = (
+    <div className="cart-items">
+      {cart.detailed.map((item, index) => (
+        <article key={`${item.productId}-${index}`} className="cart-row">
+          <img src={item.product.imageUrl} alt="" />
+          <div>
+            <strong>{item.product.name}</strong>
+            {item.option && <small>{item.option}</small>}
+            {item.addons.length ? (
+              <small>{item.addons.map((addon) => addon.name).join(", ")}</small>
+            ) : null}
+            <Quantity
+              value={item.quantity}
+              step={item.product.step || 1}
+              displayValue={formatQuantity(item.product, item.quantity)}
+              onChange={(value) => cart.update(index, value)}
+            />
+          </div>
+          <div className="cart-row-end">
+            <strong>{money(item.lineTotal)}</strong>
+            <button
+              onClick={() => cart.remove(index)}
+              aria-label={`Удалить ${item.product.name}`}
+            >
+              <Trash2 aria-hidden="true" />
+              <span>Удалить</span>
+            </button>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+  const crossSellBlock = !checkoutSummary && (
+    <div className="cross-sell">
+      <div className="cross-sell-heading">
+        <div>
+          <small>Можно добавить</small>
+          <h2>К заказу</h2>
+        </div>
+        <span>{crossSell.length} варианта</span>
+      </div>
+      <div className="cross-sell-list">
+        {crossSell.map((product) => (
+          <button
+            key={product.id}
+            onClick={() => cart.add(product, product.step || 1)}
+          >
+            <img src={product.imageUrl} alt="" />
+            <span>{product.name}</span>
+            <strong>+ {money(product.price)}</strong>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (!compact && !checkoutSummary) {
+    return (
+      <div className="cart cart-page-cart">
+        <div className="cart-heading">
+          <div>
+            <p>Состав заказа</p>
+            <h1 id={titleId}>В корзине</h1>
+          </div>
+          <span className="cart-heading-count">{cart.detailed.length}</span>
+        </div>
+        <div className="cart-page-layout">
+          <div className="cart-page-main">
+            {cartRows}
+            <DeliveryProgress subtotal={cart.subtotal} settings={data.settings} />
+            {crossSellBlock}
+          </div>
+          <aside className="cart-page-summary" aria-label="Итого по заказу">
+            <div className="cart-summary-heading">
+              <span>Итого</span>
+              <strong>{money(cart.total)}</strong>
+              <small>Оплата при получении</small>
+            </div>
+            <Totals
+              subtotal={cart.subtotal}
+              deliveryPrice={cart.deliveryPrice}
+              total={cart.total}
+            />
+            <Link className="button primary full" to="/checkout" onClick={onCheckout}>
+              Перейти к оформлению <ArrowRight aria-hidden="true" />
+            </Link>
+            <p className="cart-security">
+              <ShieldCheck aria-hidden="true" /> Данные используются только для оформления заказа.
+            </p>
+          </aside>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={compact ? "cart compact" : "cart"}>
       {!compact && (
@@ -3878,55 +3983,11 @@ function CartContent({
           <ShoppingBag aria-hidden="true" />
         </div>
       )}
-      <div className="cart-items">
-        {cart.detailed.map((item, index) => (
-          <article key={`${item.productId}-${index}`} className="cart-row">
-            <img src={item.product.imageUrl} alt="" />
-            <div>
-              <strong>{item.product.name}</strong>
-              {item.option && <small>{item.option}</small>}
-              {item.addons.length ? (
-                <small>
-                  {item.addons.map((addon) => addon.name).join(", ")}
-                </small>
-              ) : null}
-              <Quantity
-                value={item.quantity}
-                step={item.product.step || 1}
-                displayValue={formatQuantity(item.product, item.quantity)}
-                onChange={(value) => cart.update(index, value)}
-              />
-            </div>
-            <div className="cart-row-end">
-              <strong>{money(item.lineTotal)}</strong>
-              <button
-                onClick={() => cart.remove(index)}
-                aria-label={`Удалить ${item.product.name}`}
-              >
-                <Trash2 aria-hidden="true" />
-                <span>Удалить</span>
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
+      {cartRows}
       {!checkoutSummary && (
         <DeliveryProgress subtotal={cart.subtotal} settings={data.settings} />
       )}
-      {!checkoutSummary && (
-        <div className="cross-sell">
-          <h2>ДОБАВИТЬ К ЗАКАЗУ?</h2>
-          {crossSell.map((product) => (
-            <button
-              key={product.id}
-              onClick={() => cart.add(product, product.step || 1)}
-            >
-              <span>{product.name}</span>
-              <strong>{money(product.price)}</strong>
-            </button>
-          ))}
-        </div>
-      )}
+      {crossSellBlock}
       <Totals
         subtotal={cart.subtotal}
         deliveryPrice={cart.deliveryPrice}
