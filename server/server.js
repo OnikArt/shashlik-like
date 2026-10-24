@@ -1154,6 +1154,13 @@ function sanitizeUser(input, fallback = {}) {
   };
 }
 
+function normalizeRussianPhone(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("9")) digits = `7${digits}`;
+  if (digits.length === 11 && digits.startsWith("8")) digits = `7${digits.slice(1)}`;
+  return digits.length === 11 && digits.startsWith("79") ? `+${digits}` : "";
+}
+
 function calculateOrder(store, payload) {
   const settings = store.settings;
   const productsById = new Map(store.products.map((product) => [product.id, product]));
@@ -1764,8 +1771,8 @@ async function api(req, res, url) {
         if (calculated.subtotal < minimum) throw new Error(`Минимальная сумма заказа — ${minimum} ₽`);
         if (calculated.subtotal > maximum) throw new Error(`Максимальная сумма заказа — ${maximum} ₽`);
         const customerName = String(payload.customerName || "").trim().slice(0, 80);
-        const phone = String(payload.phone || "").trim();
-        if (!customerName || phone.replace(/\D/g, "").length !== 11) throw new Error("Укажите имя и корректный российский номер телефона");
+        const phone = normalizeRussianPhone(payload.phone);
+        if (!customerName || !phone) throw new Error("Укажите имя и корректный российский номер телефона");
 
         const addressData = calculated.deliveryType === "delivery" ? validateDeliveryAddress(payload.address) : null;
         const pickupPoint = calculated.deliveryType === "pickup"
@@ -2187,8 +2194,8 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
         const calculated = calculateOrder(freshStore, { items: payload.items, deliveryType });
         if (!calculated.items.length) throw new OrderStatusError("В заказе должна остаться хотя бы одна позиция");
         const customerName = String(payload.customerName || "").trim().slice(0, 80);
-        const phone = String(payload.phone || "").trim();
-        if (!customerName || phone.replace(/\D/g, "").length !== 11) throw new OrderStatusError("Укажите имя и корректный российский номер телефона");
+        const phone = normalizeRussianPhone(payload.phone);
+        if (!customerName || !phone) throw new OrderStatusError("Укажите имя и корректный российский номер телефона");
         const addressData = deliveryType === "delivery" ? validateDeliveryAddress(payload.address) : null;
         const pickupPoint = deliveryType === "pickup"
           ? freshStore.pickupPoints.find((point) => point.id === String(payload.pickupPointId || "") && point.isActive)

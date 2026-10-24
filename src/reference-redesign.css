@@ -1365,6 +1365,60 @@ section.admin-login > form {
   }
 }
 
+/* Commerce overlays must escape transformed product cards and fill the viewport. */
+.configurator-shell {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  margin: 0 !important;
+  z-index: 10000 !important;
+}
+
+.product-configurator {
+  width: min(560px, calc(100vw - 32px)) !important;
+  max-height: calc(100dvh - 32px) !important;
+  overflow: hidden !important;
+  border-radius: 24px !important;
+}
+
+.product-configurator .configurator-content {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+.cart-page-panel {
+  position: relative;
+}
+
+.cart-page-close {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  margin: 0 0 20px auto;
+  color: var(--color-heading, #181512);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cart-page-close svg {
+  width: 22px;
+  height: 22px;
+}
+
+@media (max-width: 680px) {
+  .product-configurator {
+    width: 100vw !important;
+    max-height: 94dvh !important;
+    border-radius: 24px 24px 0 0 !important;
+  }
+
+  .cart-page-close {
+    margin-bottom: 14px;
+  }
+}
+
 @media (min-width: 761px) and (max-width: 1100px) {
   .promotion-showcase:not(.standalone) .promotion-carousel {
     overflow: visible !important;

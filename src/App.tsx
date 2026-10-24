@@ -355,6 +355,12 @@ const formatRussianPhone = (value: string) => {
   if (parts[3]) formatted += `-${parts[3]}`;
   return formatted;
 };
+const normalizeRussianPhone = (value: string) => {
+  let digits = value.replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("9")) digits = `7${digits}`;
+  if (digits.length === 11 && digits.startsWith("8")) digits = `7${digits.slice(1)}`;
+  return digits.length === 11 && digits.startsWith("79") ? `+${digits}` : "";
+};
 const readImageAsDataUrl = (file: File, onLoad: (value: string) => void) => {
   const reader = new FileReader();
   reader.onload = () => onLoad(String(reader.result || ""));
@@ -3287,7 +3293,7 @@ function ProductCard({
           </button>
         </div>
       </div>
-      {configuring && (
+      {configuring && createPortal(
         <div
           className="configurator-shell"
           role="dialog"
@@ -3370,7 +3376,8 @@ function ProductCard({
               </button>
             </footer>
           </section>
-        </div>
+        </div>,
+        document.body,
       )}
     </article>
   );
@@ -3812,6 +3819,10 @@ function CartPage({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
           className="cart-page-panel home-container"
           aria-labelledby="cart-page-title"
         >
+          <Link className="cart-page-close" to="/menu" aria-label="Закрыть корзину и вернуться в меню">
+            <X aria-hidden="true" />
+            <span>Продолжить покупки</span>
+          </Link>
           <CartContent data={data} cart={cart} titleId="cart-page-title" />
         </section>
       </main>
@@ -4075,6 +4086,12 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
       setBusy(false);
       return;
     }
+    const normalizedPhone = normalizeRussianPhone(form.phone);
+    if (!normalizedPhone) {
+      setError("Укажите российский номер телефона: +7 (900) 000-00-00.");
+      setBusy(false);
+      return;
+    }
     if (deliveryType === "delivery" && addressState.status !== "valid") {
       const valid = await validateAddress();
       if (!valid) {
@@ -4088,6 +4105,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
     );
     const payload = {
       ...form,
+      phone: normalizedPhone,
       deliveryType,
       paymentMethod,
       pickupPointName: pickupPoint?.name || "",
@@ -4202,7 +4220,6 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
                 Телефон
                 <input
                   required
-                  pattern="\\+7 \\(\\d{3}\\) \\d{3}-\\d{2}-\\d{2}"
                   title="Введите номер в формате +7 (900) 000-00-00"
                   inputMode="tel"
                   autoComplete="tel"

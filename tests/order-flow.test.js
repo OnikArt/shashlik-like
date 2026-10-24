@@ -85,7 +85,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         customerName: "Тестовый заказ",
-        phone: "+7 (900) 000-00-00",
+        phone: "8 (900) 000-00-00",
         deliveryType: "delivery",
         paymentMethod: "TRANSFER_ON_DELIVERY",
         address: "ул. Ленина, 12",
@@ -96,6 +96,7 @@ test("checkout persists before Telegram and exposes a private tracking DTO", asy
     assert.equal(createdResponse.status, 201);
     assert.match(created.order.trackingToken, /^[A-Za-z0-9_-]{40,}$/);
     assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.text.includes(created.order.orderNumber)));
+    assert.ok(telegramRequests.some((request) => request.method === "sendMessage" && request.body.text.includes("+79000000000")));
 
     const trackingResponse = await fetch(baseUrl + "/api/orders/track/" + created.order.trackingToken);
     const tracking = await trackingResponse.json();
