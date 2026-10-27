@@ -4,6 +4,7 @@ import { createReadStream, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import pg from "pg";
 import { availableOrderTransitions, legacyOrderStatuses, orderStatusLabels, orderStatuses, orderStatusTimestamp } from "./order-status.js";
 import { AddressValidationError, validateDeliveryAddress } from "./address-service.js";
 
@@ -29,6 +30,10 @@ loadEnvFile();
 const storePath = process.env.DATA_STORE_PATH ? path.resolve(rootDir, process.env.DATA_STORE_PATH) : path.join(__dirname, "data", "store.json");
 const dataDir = path.dirname(storePath);
 const isProduction = process.env.NODE_ENV === "production";
+const databaseUrl = String(process.env.LAYERO_DATABASE_URL || process.env.DATABASE_URL || "").trim();
+const storageBackend = databaseUrl ? "postgres" : "file";
+const { Pool } = pg;
+const databasePool = databaseUrl ? new Pool({ connectionString: databaseUrl, ssl: process.env.DATABASE_SSL === "false" ? false : { rejectUnauthorized: false }, max: 4 }) : null;
 const port = Number(process.env.PORT || 4174);
 const tokenSecret = process.env.ADMIN_TOKEN_SECRET || "local-shashlik-like-secret";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin";
@@ -101,6 +106,9 @@ if (isProduction) {
   if (!existsSync(path.join(rootDir, "dist", "index.html"))) {
     throw new Error("Production frontend build is missing: run npm run build before npm start");
   }
+  if (!databaseUrl) {
+    throw new Error("Persistent PostgreSQL is required in production: set LAYERO_DATABASE_URL or DATABASE_URL");
+  }
 }
 
 const rolePermissions = {
@@ -149,6 +157,8 @@ function createOwnerUser() {
     telegramUserId: "",
     telegramChatId: process.env.TELEGRAM_CHAT_ID || "",
     telegramUsername: "",
+    telegramEvents: [...telegramEventTypes],
+    telegramNotificationsEnabled: true,
     isActive: true,
     createdAt: now,
     updatedAt: now,
@@ -225,8 +235,18 @@ const confirmedPickupPoints = [
   }
 ];
 
+const telegramEventTypes = ["new_order", "accepted", "cancelled", "delivering", "completed", "catalog_changes", "staff_changes"];
+
+function normalizeTelegramEvents(events) {
+  const source = Array.isArray(events) ? events.map(String) : [...telegramEventTypes];
+  const expanded = source.includes("status_changes")
+    ? [...source, "accepted", "delivering", "completed"]
+    : source;
+  return [...new Set(expanded.filter((event) => telegramEventTypes.includes(event)))];
+}
+
 const seedStore = {
-  schemaVersion: 4,
+  schemaVersion: 6,
   categories: [
     { id: "shashlik", name: "Шашлыки", minPrice: "От 120 ₽ / 100 г", sortOrder: 1, isActive: true },
     { id: "shawarma", name: "Шаурма", minPrice: "От 240 ₽", sortOrder: 2 },
@@ -606,10 +626,41 @@ const seedStore = {
   users: [createOwnerUser()],
   auditLog: [],
   telegramLinks: [],
+  telegramGroupLinks: [],
+  telegramRecipients: [],
+  modifierGroups: [],
   telegramUpdateOffset: 0
 };
 
 async function ensureStore() {
+  if (databasePool) {
+    await databasePool.query(`
+      CREATE TABLE IF NOT EXISTS app_state (
+        id text PRIMARY KEY,
+        data jsonb NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await databasePool.query(`
+      CREATE TABLE IF NOT EXISTS app_media (
+        id text PRIMARY KEY,
+        content_type text NOT NULL,
+        bytes bytea NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    const existing = await databasePool.query("SELECT 1 FROM app_state WHERE id = 'primary'");
+    if (!existing.rowCount) {
+      if (isProduction && process.env.ALLOW_EMPTY_DATABASE_INITIALIZATION !== "true") {
+        throw new Error("PostgreSQL is empty. Import a verified backup first or explicitly set ALLOW_EMPTY_DATABASE_INITIALIZATION=true for a brand-new installation");
+      }
+      await databasePool.query(
+        "INSERT INTO app_state (id, data) VALUES ('primary', $1::jsonb) ON CONFLICT (id) DO NOTHING",
+        [JSON.stringify(seedStore)]
+      );
+    }
+    return;
+  }
   await mkdir(dataDir, { recursive: true });
   if (!existsSync(storePath)) {
     await writeStore(seedStore);
@@ -620,10 +671,20 @@ async function readStore() {
   await ensureStore();
   let store;
   try {
-    const raw = await readFile(storePath, "utf8");
-    if (!raw.trim()) throw new Error("Store is empty");
-    store = JSON.parse(raw.replace(/^\\uFEFF/, ""));
+    if (databasePool) {
+      const result = await databasePool.query("SELECT data FROM app_state WHERE id = 'primary'");
+      if (!result.rowCount) throw new Error("PostgreSQL app_state is empty");
+      store = result.rows[0].data;
+    } else {
+      const raw = await readFile(storePath, "utf8");
+      if (!raw.trim()) throw new Error("Store is empty");
+      store = JSON.parse(raw.replace(/^\\uFEFF/, ""));
+    }
   } catch (error) {
+    if (databasePool) {
+      console.error("PostgreSQL storage read failed:", error.message);
+      throw new Error("Постоянное хранилище временно недоступно");
+    }
     const snapshots = (await readdir(dataDir))
       .filter((name) => name.startsWith("store.json.") && name.endsWith(".tmp"))
       .map((name) => path.join(dataDir, name));
@@ -693,6 +754,25 @@ async function readStore() {
     store.schemaVersion = 4;
     changed = true;
   }
+  if (Number(store.schemaVersion || 0) < 5) {
+    if (!Array.isArray(store.telegramGroupLinks)) store.telegramGroupLinks = [];
+    if (!Array.isArray(store.telegramRecipients)) store.telegramRecipients = [];
+    for (const user of store.users || []) {
+      user.telegramEvents = normalizeTelegramEvents(user.telegramEvents);
+      if (typeof user.telegramNotificationsEnabled !== "boolean") user.telegramNotificationsEnabled = true;
+    }
+    store.schemaVersion = 5;
+    changed = true;
+  }
+  if (Number(store.schemaVersion || 0) < 6) {
+    if (!Array.isArray(store.modifierGroups)) store.modifierGroups = [];
+    for (const product of store.products || []) {
+      if (typeof product.freeOnionEnabled !== "boolean") product.freeOnionEnabled = /лук.*бесплат/i.test(`${product.badge || ""} ${product.description || ""}`);
+      if (!Array.isArray(product.modifierGroupIds)) product.modifierGroupIds = [];
+    }
+    store.schemaVersion = 6;
+    changed = true;
+  }
   if (!Array.isArray(store.users) || !store.users.length) {
     store.users = [createOwnerUser()];
     changed = true;
@@ -703,6 +783,18 @@ async function readStore() {
   }
   if (!Array.isArray(store.telegramLinks)) {
     store.telegramLinks = [];
+    changed = true;
+  }
+  if (!Array.isArray(store.telegramGroupLinks)) {
+    store.telegramGroupLinks = [];
+    changed = true;
+  }
+  if (!Array.isArray(store.telegramRecipients)) {
+    store.telegramRecipients = [];
+    changed = true;
+  }
+  if (!Array.isArray(store.modifierGroups)) {
+    store.modifierGroups = [];
     changed = true;
   }
   if (!Array.isArray(store.telegramOutbox)) {
@@ -729,6 +821,13 @@ async function readStore() {
     if (!user.workPointId) { user.workPointId = ""; changed = true; }
     if (!["DAY", "NIGHT"].includes(user.shiftType)) { user.shiftType = "DAY"; changed = true; }
     if (typeof user.isActive !== "boolean") { user.isActive = true; changed = true; }
+    const normalizedEvents = normalizeTelegramEvents(user.telegramEvents);
+    if (JSON.stringify(user.telegramEvents) !== JSON.stringify(normalizedEvents)) { user.telegramEvents = normalizedEvents; changed = true; }
+    if (typeof user.telegramNotificationsEnabled !== "boolean") { user.telegramNotificationsEnabled = true; changed = true; }
+  }
+  for (const recipient of store.telegramRecipients) {
+    const normalizedEvents = normalizeTelegramEvents(recipient.events);
+    if (JSON.stringify(recipient.events) !== JSON.stringify(normalizedEvents)) { recipient.events = normalizedEvents; changed = true; }
   }
 for (const product of store.products || []) {
     if (!Array.isArray(product.options)) {
@@ -741,6 +840,8 @@ for (const product of store.products || []) {
         : [];
       changed = true;
     }
+    if (typeof product.freeOnionEnabled !== "boolean") { product.freeOnionEnabled = /лук.*бесплат/i.test(`${product.badge || ""} ${product.description || ""}`); changed = true; }
+    if (!Array.isArray(product.modifierGroupIds)) { product.modifierGroupIds = []; changed = true; }
     if (!Array.isArray(product.images) || !product.images.length) {
       product.images = [product.imageUrl || "/assets/placeholder.svg"];
       changed = true;
@@ -797,6 +898,14 @@ let storeWriteQueue = Promise.resolve();
 function writeStore(store) {
   const snapshot = JSON.stringify(store, null, 2);
   const operation = storeWriteQueue.then(async () => {
+    if (databasePool) {
+      const result = await databasePool.query(
+        "UPDATE app_state SET data = $1::jsonb, updated_at = now() WHERE id = 'primary'",
+        [snapshot]
+      );
+      if (!result.rowCount) throw new Error("PostgreSQL app_state is not initialized");
+      return;
+    }
     await mkdir(dataDir, { recursive: true });
     const temporaryPath = `${storePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
     try {
@@ -867,7 +976,9 @@ function publicOrderDto(order, store) {
       quantity: item.quantity,
       quantityLabel: item.quantityLabel,
       option: item.option,
+      onionChoice: item.onionChoice || "",
       addons: item.addons.map((addon) => ({ name: addon.name })),
+      modifiers: (item.modifiers || []).map((group) => ({ groupName: group.groupName, options: group.options.map((option) => ({ name: option.name })) })),
       total: item.total
     })),
     subtotal: order.subtotal,
@@ -924,7 +1035,7 @@ async function updateOrderStatus({ orderId, orderNumber, targetStatus, expectedS
       changedByUserId: freshActor.id,
       source
     });
-    return { order, changed: true, idempotent: false };
+    return { order, changed: true, idempotent: false, statusNotificationChats: notificationChats(store, targetStatus) };
   });
 }
 
@@ -1098,6 +1209,7 @@ function publicStore(store) {
     categories: store.categories.filter((category) => category.isActive !== false).sort((a, b) => a.sortOrder - b.sortOrder),
     products: store.products.filter((p) => p.isActive).sort((a, b) => a.sortOrder - b.sortOrder),
     addons: store.addons.filter((a) => a.isActive && a.isCustomerVisible !== false).sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999)),
+    modifierGroups: (store.modifierGroups || []).filter((group) => group.isActive !== false),
     pickupPoints: store.pickupPoints.filter((p) => p.isActive).sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999)),
     settings: store.settings
   };
@@ -1114,7 +1226,7 @@ function ensurePermission(user, res, permission) {
 
 function adminBootstrap(store, currentUser) {
   const permissions = userPermissions(currentUser);
-  const { telegramLinks, telegramUpdateOffset, telegramOutbox, analyticsEvents, users, auditLog, ...safeStore } = store;
+  const { telegramLinks, telegramGroupLinks, telegramUpdateOffset, telegramOutbox, analyticsEvents, users, auditLog, ...safeStore } = store;
   return {
     ...safeStore,
     orders: store.orders.map((order) => ({ ...order, availableTransitions: availableOrderTransitions(order) })),
@@ -1147,6 +1259,10 @@ function sanitizeUser(input, fallback = {}) {
     telegramUserId: String(input.telegramUserId ?? fallback.telegramUserId ?? "").trim(),
     telegramChatId: String(input.telegramChatId ?? fallback.telegramChatId ?? "").trim(),
     telegramUsername: String(input.telegramUsername ?? fallback.telegramUsername ?? "").trim(),
+    telegramEvents: Array.isArray(input.telegramEvents)
+      ? normalizeTelegramEvents(input.telegramEvents)
+      : Array.isArray(fallback.telegramEvents) ? [...fallback.telegramEvents] : [...telegramEventTypes],
+    telegramNotificationsEnabled: Boolean(input.telegramNotificationsEnabled ?? fallback.telegramNotificationsEnabled ?? true),
     isActive: Boolean(input.isActive ?? fallback.isActive ?? true),
     createdAt: fallback.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -1165,6 +1281,7 @@ function calculateOrder(store, payload) {
   const settings = store.settings;
   const productsById = new Map(store.products.map((product) => [product.id, product]));
   const addonsById = new Map(store.addons.map((addon) => [addon.id, addon]));
+  const modifierGroupsById = new Map((store.modifierGroups || []).map((group) => [group.id, group]));
   const items = [];
   const requestedItems = Array.isArray(payload.items) ? payload.items : [];
   if (requestedItems.length > 100) throw new Error("В заказе слишком много позиций");
@@ -1199,7 +1316,27 @@ function calculateOrder(store, payload) {
       throw new Error("Одно из дополнений для товара «" + product.name + "» недоступно");
     }
     const addonsTotal = addons.reduce((sum, addon) => sum + addon.price, 0);
-    const lineTotal = lineItemTotal(product, quantity, addonsTotal);
+    const requestedModifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+    const requestedByGroup = new Map(requestedModifiers.map((selection) => [String(selection?.groupId || ""), Array.isArray(selection?.optionIds) ? selection.optionIds.map(String) : []]));
+    const modifiers = [];
+    for (const groupId of product.modifierGroupIds || []) {
+      const group = modifierGroupsById.get(groupId);
+      if (!group || group.isActive === false) continue;
+      const available = (group.options || []).filter((option) => option.isActive !== false);
+      const defaults = available.filter((option) => option.defaultSelected).map((option) => option.id);
+      const optionIds = requestedByGroup.has(groupId) ? [...new Set(requestedByGroup.get(groupId))] : defaults;
+      const min = group.required ? Math.max(1, Number(group.minSelections || 1)) : Math.max(0, Number(group.minSelections || 0));
+      const max = group.selection === "single" ? 1 : Math.max(min, Number(group.maxSelections || available.length));
+      if (optionIds.length < min || optionIds.length > max) throw new Error(`Проверьте выбор «${group.name}» для товара «${product.name}»`);
+      const selected = optionIds.map((id) => available.find((option) => option.id === id)).filter(Boolean);
+      if (selected.length !== optionIds.length) throw new Error(`Недоступный модификатор товара «${product.name}»`);
+      modifiers.push({ groupId: group.id, groupName: group.name, options: selected.map((option) => ({ id: option.id, name: option.name, price: Number(option.price || 0) })) });
+    }
+    if ([...requestedByGroup.keys()].some((groupId) => !(product.modifierGroupIds || []).includes(groupId))) throw new Error(`Недоступная группа модификаторов товара «${product.name}»`);
+    const onionChoice = product.freeOnionEnabled ? (item.onionChoice === "without" ? "without" : "with") : "";
+    if (!product.freeOnionEnabled && item.onionChoice) throw new Error(`Выбор лука недоступен для товара «${product.name}»`);
+    const modifierTotal = modifiers.reduce((sum, group) => sum + group.options.reduce((groupSum, option) => groupSum + option.price, 0), 0);
+    const lineTotal = lineItemTotal(product, quantity, addonsTotal + modifierTotal);
     items.push({
       productId: product.id,
       name: product.name,
@@ -1208,7 +1345,9 @@ function calculateOrder(store, payload) {
       quantity,
       quantityLabel: quantityLabel(product, quantity),
       option,
+      onionChoice,
       addons,
+      modifiers,
       total: lineTotal
     });
   }
@@ -1250,8 +1389,11 @@ function telegramMessage(order) {
   ];
   order.items.forEach((item, index) => {
     const addons = item.addons.length ? " + " + item.addons.map((addon) => addon.name).join(", ") : "";
+    const modifiers = (item.modifiers || []).flatMap((group) => group.options.map((option) => option.name));
+    const modifierText = modifiers.length ? " + " + modifiers.join(", ") : "";
+    const onion = item.onionChoice ? ` (${item.onionChoice === "without" ? "без лука" : "с луком"})` : "";
     const option = item.option ? " (" + item.option + ")" : "";
-    lines.push((index + 1) + ". " + item.name + option + addons);
+    lines.push((index + 1) + ". " + item.name + option + onion + addons + modifierText);
     lines.push((item.quantityLabel || item.quantity + " × " + item.unit) + " — " + item.total + " ₽");
   });
   lines.push("", "────────────────", "Товары: " + order.subtotal + " ₽", "Доставка: " + order.deliveryPrice + " ₽", "ИТОГО: " + order.total + " ₽");
@@ -1324,11 +1466,49 @@ function connectedChats(store, filter = () => true) {
   return store.users.filter((user) => user.isActive && user.telegramChatId && filter(user)).map((user) => user.telegramChatId);
 }
 
+function notificationChats(store, eventType, filter = () => true) {
+  return [...new Set([...personalNotificationChats(store, eventType, filter), ...groupNotificationChats(store, eventType)].map(String).filter(Boolean))];
+}
+
+function personalNotificationChats(store, eventType, filter = () => true) {
+  return store.users
+    .filter((user) => user.isActive && user.telegramChatId && user.telegramNotificationsEnabled !== false && filter(user))
+    .filter((user) => !eventType || !Array.isArray(user.telegramEvents) || user.telegramEvents.includes(eventType))
+    .map((user) => user.telegramChatId);
+}
+
+function groupNotificationChats(store, eventType) {
+  return (store.telegramRecipients || [])
+    .filter((recipient) => recipient.type === "group" && recipient.isActive !== false)
+    .filter((recipient) => !eventType || !Array.isArray(recipient.events) || recipient.events.includes(eventType))
+    .map((recipient) => recipient.chatId);
+}
+
+function telegramGroupOrderMessage(order) {
+  const lines = [
+    `🔥 Заказ #${order.orderNumber}`,
+    `Статус: ${orderStatusLabels[order.status]}`,
+    `Получение: ${order.deliveryType === "pickup" ? "Самовывоз" : "Доставка"}`,
+    "",
+    "СОСТАВ:"
+  ];
+  for (const [index, item] of order.items.entries()) {
+    const details = [item.option, item.onionChoice === "without" ? "без лука" : item.onionChoice === "with" ? "с луком" : "", ...(item.addons || []).map((addon) => addon.name), ...(item.modifiers || []).flatMap((group) => group.options.map((option) => option.name))].filter(Boolean);
+    lines.push(`${index + 1}. ${item.name}${details.length ? ` (${details.join(", ")})` : ""}`);
+    lines.push(`${item.quantityLabel} — ${item.total} ₽`);
+  }
+  lines.push("", `ИТОГО: ${order.total} ₽`, "Контакты клиента доступны сотрудникам в админ-панели.");
+  return lines.join("\n");
+}
+
 async function sendOrderTelegram(store, order) {
   if (process.env.TELEGRAM_DISABLED === "true") return { sent: false, reason: "disabled", messages: [] };
-  const recipients = connectedChats(store);
-  if (process.env.TELEGRAM_CHAT_ID) recipients.push(process.env.TELEGRAM_CHAT_ID);
-  const uniqueRecipients = [...new Set(recipients.map(String).filter(Boolean))];
+  const personalRecipients = personalNotificationChats(store, "new_order");
+  if (process.env.TELEGRAM_CHAT_ID) personalRecipients.push(process.env.TELEGRAM_CHAT_ID);
+  const groupRecipients = groupNotificationChats(store, "new_order");
+  const uniquePersonal = [...new Set(personalRecipients.map(String).filter(Boolean))];
+  const uniqueGroups = [...new Set(groupRecipients.map(String).filter(Boolean))].filter((chatId) => !uniquePersonal.includes(chatId));
+  const uniqueRecipients = [...uniquePersonal, ...uniqueGroups];
   if (!uniqueRecipients.length) {
     return {
       sent: false,
@@ -1341,11 +1521,11 @@ async function sendOrderTelegram(store, order) {
   }
   const settled = await Promise.allSettled(uniqueRecipients.map((chatId) => telegramRequestWithRetry("sendMessage", {
     chat_id: chatId,
-    text: telegramMessage(order),
+    text: uniqueGroups.includes(chatId) ? telegramGroupOrderMessage(order) : telegramMessage(order),
     reply_markup: telegramOrderKeyboard(order)
   })));
   const messages = settled.flatMap((result, index) => result.status === "fulfilled"
-    ? [{ chatId: uniqueRecipients[index], messageId: result.value.message_id }]
+    ? [{ chatId: uniqueRecipients[index], messageId: result.value.message_id, audience: uniqueGroups.includes(uniqueRecipients[index]) ? "group" : "personal" }]
     : []);
   const firstError = settled.find((result) => result.status === "rejected");
   return {
@@ -1363,9 +1543,17 @@ async function refreshOrderTelegram(order) {
   await Promise.allSettled(messages.map((message) => telegramRequestWithRetry("editMessageText", {
     chat_id: message.chatId,
     message_id: message.messageId,
-    text: telegramMessage(order),
+    text: message.audience === "group" ? telegramGroupOrderMessage(order) : telegramMessage(order),
     reply_markup: telegramOrderKeyboard(order)
   })));
+}
+
+async function sendOrderStatusNotification(result) {
+  if (result.idempotent || !result.statusNotificationChats?.length) return;
+  await sendTelegramText(
+    result.statusNotificationChats,
+    `🔔 Заказ #${result.order.orderNumber}\n${orderStatusLabels[result.order.status]}`
+  );
 }
 
 function changeLabel(key) {
@@ -1441,7 +1629,8 @@ async function notifyAudit(store, actor, scope, action, subject, changes = []) {
   store.auditLog.unshift(entry);
   store.auditLog = store.auditLog.slice(0, 500);
   const managementOnly = scope === "users";
-  const recipients = connectedChats(store, (user) => !managementOnly || ["MANAGER", "CO_OWNER", "OWNER"].includes(user.role));
+  const eventType = scope === "users" ? "staff_changes" : "catalog_changes";
+  const recipients = notificationChats(store, eventType, (user) => !managementOnly || ["MANAGER", "CO_OWNER", "OWNER"].includes(user.role));
   const text = [
     "🔥 <b>" + escapeTelegramHtml(action.toUpperCase()) + "</b>",
     "",
@@ -1552,6 +1741,32 @@ function createTelegramLink(store, message) {
 }
 
 async function handleTelegramMessage(message) {
+  const groupCommand = String(message.text || "").trim().match(/^\/connectgroup(?:@\w+)?\s+([A-F0-9]{8,32})$/i);
+  if (groupCommand && ["group", "supergroup"].includes(message.chat?.type)) {
+    const result = await mutateStore(async (store) => {
+      const index = (store.telegramGroupLinks || []).findIndex((link) => link.code === groupCommand[1].toUpperCase() && link.expiresAt > Date.now());
+      if (index === -1) return { error: "Код подключения группы не найден или истёк", changed: false };
+      const link = store.telegramGroupLinks[index];
+      const chatId = String(message.chat.id);
+      const recipient = {
+        id: crypto.randomUUID(),
+        type: "group",
+        chatId,
+        title: String(message.chat.title || "Telegram-группа").slice(0, 120),
+        events: [...telegramEventTypes],
+        isActive: true,
+        connectedAt: new Date().toISOString(),
+        connectedByTelegramUserId: String(message.from?.id || "")
+      };
+      const existingIndex = (store.telegramRecipients || []).findIndex((item) => String(item.chatId) === chatId);
+      if (existingIndex >= 0) store.telegramRecipients[existingIndex] = { ...store.telegramRecipients[existingIndex], ...recipient, id: store.telegramRecipients[existingIndex].id };
+      else store.telegramRecipients.push(recipient);
+      store.telegramGroupLinks.splice(index, 1);
+      return { recipient, link, changed: true };
+    });
+    await sendTelegramText([message.chat.id], result.error || `Группа «${result.recipient.title}» подключена к уведомлениям.`);
+    return;
+  }
   const result = await mutateStore(async (store) => ({ ...createTelegramLink(store, message), changed: true }));
   if (result.existing) {
     await sendTelegramText([message.chat.id], "Вы уже подключены как " + userNameForAudit(result.existing) + " (" + roleLabels[result.existing.role] + ").");
@@ -1560,8 +1775,16 @@ async function handleTelegramMessage(message) {
   }
 }
 
+const processedTelegramCallbacks = new Map();
 async function handleTelegramCallback(callback) {
   const callbackId = callback.id;
+  const now = Date.now();
+  for (const [id, timestamp] of processedTelegramCallbacks) if (now - timestamp > 10 * 60_000) processedTelegramCallbacks.delete(id);
+  if (processedTelegramCallbacks.has(callbackId)) {
+    await telegramRequest("answerCallbackQuery", { callback_query_id: callbackId, text: "Действие уже обработано" });
+    return;
+  }
+  processedTelegramCallbacks.set(callbackId, now);
   const match = String(callback.data || "").match(/^os:(SL-\d+):(new|accepted|preparing|ready|delivering|completed|cancelled):(new|accepted|preparing|ready|delivering|completed|cancelled)$/);
   if (!match) {
     await telegramRequest("answerCallbackQuery", { callback_query_id: callbackId, text: "Неизвестное действие", show_alert: true });
@@ -1583,6 +1806,7 @@ async function handleTelegramCallback(callback) {
       source: "telegram"
     });
     await refreshOrderTelegram(result.order);
+    await sendOrderStatusNotification(result);
     await telegramRequest("answerCallbackQuery", {
       callback_query_id: callbackId,
       text: result.idempotent ? "Статус уже актуален" : orderStatusLabels[result.order.status]
@@ -1645,6 +1869,7 @@ function sanitizeProduct(input, fallback = {}) {
   const normalizedImages = [requestedMain, ...images.filter((value) => value !== requestedMain)].slice(0, 8);
   const options = [...new Set((Array.isArray(input.options) ? input.options : fallback.options || []).map((value) => String(value || "").trim()).filter(Boolean))].slice(0, 24);
   const addonIds = [...new Set((Array.isArray(input.addonIds) ? input.addonIds : fallback.addonIds || []).map(String))].slice(0, 64);
+  const modifierGroupIds = [...new Set((Array.isArray(input.modifierGroupIds) ? input.modifierGroupIds : fallback.modifierGroupIds || []).map(String))].slice(0, 32);
   return {
     id: input.id || fallback.id || crypto.randomUUID(),
     slug: input.slug || fallback.slug || String(input.name || "product").toLowerCase().replace(/\s+/g, "-"),
@@ -1663,14 +1888,47 @@ function sanitizeProduct(input, fallback = {}) {
     options,
     addonGroup: input.addonGroup || fallback.addonGroup || "",
     addonIds,
+    modifierGroupIds,
+    freeOnionEnabled: Boolean(input.freeOnionEnabled ?? fallback.freeOnionEnabled ?? false),
     sortOrder: Number(input.sortOrder ?? fallback.sortOrder ?? 999)
+  };
+}
+
+function sanitizeModifierGroup(input, fallback = {}) {
+  const name = String(input.name ?? fallback.name ?? "").trim();
+  if (!name) throw new Error("Укажите название группы модификаторов");
+  const selection = input.selection === "multiple" ? "multiple" : "single";
+  const options = (Array.isArray(input.options) ? input.options : fallback.options || []).map((option, index) => ({
+    id: String(option.id || crypto.randomUUID()),
+    name: String(option.name || "").trim(),
+    price: Math.max(0, Number(option.price || 0)),
+    isActive: Boolean(option.isActive ?? true),
+    defaultSelected: Boolean(option.defaultSelected),
+    sortOrder: Math.max(0, Number(option.sortOrder ?? index))
+  })).filter((option) => option.name).slice(0, 50);
+  if (!options.length) throw new Error("Добавьте хотя бы один вариант");
+  const required = Boolean(input.required ?? fallback.required ?? false);
+  const minSelections = selection === "single" ? (required ? 1 : 0) : Math.max(required ? 1 : 0, Number(input.minSelections ?? fallback.minSelections ?? 0));
+  const maxSelections = selection === "single" ? 1 : Math.max(minSelections, Math.min(options.length, Number(input.maxSelections ?? fallback.maxSelections ?? options.length)));
+  if (selection === "single" && options.filter((option) => option.defaultSelected).length > 1) throw new Error("В одиночном выборе может быть только один вариант по умолчанию");
+  return {
+    id: fallback.id || String(input.id || crypto.randomUUID()),
+    name,
+    selection,
+    required,
+    minSelections,
+    maxSelections,
+    options,
+    isActive: Boolean(input.isActive ?? fallback.isActive ?? true),
+    sortOrder: Math.max(0, Number(input.sortOrder ?? fallback.sortOrder ?? 999))
   };
 }
 
 async function sendHealth(res) {
   const checks = {
     frontend: !isProduction || existsSync(path.join(rootDir, "dist", "index.html")),
-    store: false
+    store: false,
+    persistentStorage: storageBackend === "postgres"
   };
   try {
     const store = await readStore();
@@ -1682,6 +1940,7 @@ async function sendHealth(res) {
   return send(res, ready ? 200 : 503, {
     status: ready ? "ok" : "unavailable",
     service: "shashlik-like",
+    storage: storageBackend,
     checks,
     uptime: Math.round(process.uptime())
   });
@@ -1690,6 +1949,19 @@ async function sendHealth(res) {
 async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/health") {
     return sendHealth(res);
+  }
+
+  const mediaMatch = url.pathname.match(/^\/api\/media\/([a-f0-9-]{36})$/);
+  if (req.method === "GET" && mediaMatch && databasePool) {
+    const result = await databasePool.query("SELECT content_type, bytes FROM app_media WHERE id = $1", [mediaMatch[1]]);
+    if (!result.rowCount) return notFound(res);
+    res.writeHead(200, {
+      "content-type": result.rows[0].content_type,
+      "cache-control": "public, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff"
+    });
+    res.end(result.rows[0].bytes);
+    return;
   }
 
   const store = await readStore();
@@ -1919,6 +2191,14 @@ async function api(req, res, url) {
           ? "webp"
           : "";
     if (!detectedType || detectedType !== match[1]) return send(res, 400, { error: "Содержимое файла не соответствует формату изображения" });
+    if (databasePool) {
+      const mediaId = crypto.randomUUID();
+      await databasePool.query(
+        "INSERT INTO app_media (id, content_type, bytes) VALUES ($1, $2, $3)",
+        [mediaId, `image/${detectedType}`, buffer]
+      );
+      return send(res, 201, { url: `/api/media/${mediaId}` });
+    }
     const extension = detectedType === "jpeg" ? "jpg" : detectedType;
     const uploadsDir = path.join(rootDir, "public", "uploads");
     await mkdir(uploadsDir, { recursive: true });
@@ -1967,8 +2247,15 @@ async function api(req, res, url) {
       if (payload.isActive === false) return send(res, 400, { error: "Нельзя отключить единственного активного владельца" });
     }
     const next = sanitizeUser(payload, before);
+    const disconnected = payload.telegramDisconnect === true && Boolean(next.telegramChatId || next.telegramUserId);
+    if (disconnected) {
+      next.telegramChatId = "";
+      next.telegramUserId = "";
+      next.telegramUsername = "";
+    }
     let linked = false;
     try {
+      if (payload.telegramDisconnect === true && payload.telegramLinkCode) throw new Error("Нельзя одновременно отвязать и подключить Telegram");
       linked = Boolean(applyTelegramLink(store, next, payload.telegramLinkCode));
     } catch (error) {
       return send(res, 400, { error: error.message });
@@ -1976,6 +2263,7 @@ async function api(req, res, url) {
     store.users[userIndex] = next;
     const changes = describeChanges(before, next, ["firstName", "lastName", "role", "position", "phone", "workPointId", "shiftType", "isActive"]);
     if (linked) changes.push("Telegram: подключён");
+    if (disconnected) changes.push("Telegram: отвязан");
     await notifyAudit(store, adminUser, "users", "Изменён сотрудник", userNameForAudit(next), changes);
     await writeStore(store);
     if (linked) await welcomeTelegramUser(next);
@@ -2050,6 +2338,7 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
       const product = sanitizeProduct(payload);
       if (!store.categories.some((category) => category.id === product.categoryId)) return send(res, 400, { error: "Выберите существующую категорию" });
       if (product.addonIds.some((id) => !store.addons.some((addon) => addon.id === id))) return send(res, 400, { error: "Выбрано несуществующее дополнение" });
+      if (product.modifierGroupIds.some((id) => !store.modifierGroups.some((group) => group.id === id))) return send(res, 400, { error: "Выбрана несуществующая группа модификаторов" });
       store.products.push(product);
       await notifyAudit(store, adminUser, "products", "Добавлен товар", product.name, [
         "цена: " + product.price + " ₽",
@@ -2083,8 +2372,9 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
         const next = sanitizeProduct({ ...before, ...payload }, before);
         if (!store.categories.some((category) => category.id === next.categoryId)) return send(res, 400, { error: "Выберите существующую категорию" });
         if (next.addonIds.some((id) => !store.addons.some((addon) => addon.id === id))) return send(res, 400, { error: "Выбрано несуществующее дополнение" });
+        if (next.modifierGroupIds.some((id) => !store.modifierGroups.some((group) => group.id === id))) return send(res, 400, { error: "Выбрана несуществующая группа модификаторов" });
         store.products[productIndex] = next;
-        const changes = describeChanges(before, next, ["name", "description", "price", "unit", "categoryId", "imageUrl", "images", "isActive", "isAvailable", "isFeatured", "options", "addonIds"]);
+        const changes = describeChanges(before, next, ["name", "description", "price", "unit", "categoryId", "imageUrl", "images", "isActive", "isAvailable", "isFeatured", "options", "addonIds", "modifierGroupIds", "freeOnionEnabled"]);
         await notifyAudit(store, adminUser, "products", "Изменён товар", next.name, changes);
         await writeStore(store);
         return send(res, 200, { product: next });
@@ -2096,6 +2386,41 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
       if (!ensurePermission(adminUser, res, "products.edit")) return;
       const removed = store.products.splice(productIndex, 1)[0];
       await notifyAudit(store, adminUser, "products", "Удалён товар", removed.name);
+      await writeStore(store);
+      return send(res, 200, { ok: true });
+    }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/admin/modifier-groups") {
+    if (!ensurePermission(adminUser, res, "products.edit")) return;
+    try {
+      const group = sanitizeModifierGroup(await readJson(req));
+      store.modifierGroups.push(group);
+      await writeStore(store);
+      return send(res, 201, { group });
+    } catch (error) {
+      return send(res, 400, { error: error.message });
+    }
+  }
+  const modifierGroupMatch = url.pathname.match(/^\/api\/admin\/modifier-groups\/([^/]+)$/);
+  if (modifierGroupMatch) {
+    if (!ensurePermission(adminUser, res, "products.edit")) return;
+    const groupId = decodeURIComponent(modifierGroupMatch[1]);
+    const index = store.modifierGroups.findIndex((group) => group.id === groupId);
+    if (index === -1) return notFound(res);
+    if (req.method === "PUT") {
+      try {
+        const group = sanitizeModifierGroup(await readJson(req), store.modifierGroups[index]);
+        store.modifierGroups[index] = group;
+        await writeStore(store);
+        return send(res, 200, { group });
+      } catch (error) {
+        return send(res, 400, { error: error.message });
+      }
+    }
+    if (req.method === "DELETE") {
+      store.modifierGroups.splice(index, 1);
+      store.products = store.products.map((product) => ({ ...product, modifierGroupIds: (product.modifierGroupIds || []).filter((id) => id !== groupId) }));
       await writeStore(store);
       return send(res, 200, { ok: true });
     }
@@ -2170,6 +2495,7 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
         source: "admin"
       });
       await refreshOrderTelegram(result.order);
+      await sendOrderStatusNotification(result);
       return send(res, 200, { order: result.order, idempotent: result.idempotent });
     } catch (error) {
       return send(res, error.httpStatus || 400, { error: error.message || "Не удалось изменить статус", code: error.code });
@@ -2297,6 +2623,61 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
     };
     await writeStore(store);
     return send(res, 200, { settings: store.settings });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/admin/telegram/group-link") {
+    if (!ensurePermission(adminUser, res, "settings.manage")) return;
+    const code = crypto.randomBytes(6).toString("hex").toUpperCase();
+    store.telegramGroupLinks = (store.telegramGroupLinks || []).filter((link) => link.expiresAt > Date.now());
+    store.telegramGroupLinks.push({ code, createdByUserId: adminUser.id, expiresAt: Date.now() + 30 * 60_000 });
+    await writeStore(store);
+    return send(res, 201, { code, command: `/connectgroup ${code}`, expiresInMinutes: 30 });
+  }
+
+  const telegramUserMatch = url.pathname.match(/^\/api\/admin\/telegram\/users\/([^/]+)$/);
+  if (telegramUserMatch && req.method === "PUT") {
+    if (!ensurePermission(adminUser, res, "settings.manage")) return;
+    const user = store.users.find((item) => item.id === decodeURIComponent(telegramUserMatch[1]));
+    if (!user) return notFound(res);
+    const payload = await readJson(req);
+    if ("isActive" in payload) user.telegramNotificationsEnabled = Boolean(payload.isActive);
+    if (Array.isArray(payload.events)) {
+      user.telegramEvents = [...new Set(payload.events.map(String).filter((event) => telegramEventTypes.includes(event)))];
+    }
+    user.updatedAt = new Date().toISOString();
+    await writeStore(store);
+    return send(res, 200, { user: serializeUser(user) });
+  }
+
+  const recipientMatch = url.pathname.match(/^\/api\/admin\/telegram\/recipients\/([^/]+)$/);
+  if (recipientMatch && req.method === "PUT") {
+    if (!ensurePermission(adminUser, res, "settings.manage")) return;
+    const recipient = (store.telegramRecipients || []).find((item) => item.id === decodeURIComponent(recipientMatch[1]));
+    if (!recipient) return notFound(res);
+    const payload = await readJson(req);
+    recipient.title = String(payload.title ?? recipient.title).trim().slice(0, 120) || recipient.title;
+    recipient.isActive = Boolean(payload.isActive ?? recipient.isActive);
+    recipient.events = [...new Set((Array.isArray(payload.events) ? payload.events : recipient.events || []).map(String).filter((event) => telegramEventTypes.includes(event)))];
+    await writeStore(store);
+    return send(res, 200, { recipient });
+  }
+  if (recipientMatch && req.method === "DELETE") {
+    if (!ensurePermission(adminUser, res, "settings.manage")) return;
+    const before = store.telegramRecipients.length;
+    store.telegramRecipients = store.telegramRecipients.filter((item) => item.id !== decodeURIComponent(recipientMatch[1]));
+    if (store.telegramRecipients.length === before) return notFound(res);
+    await writeStore(store);
+    return send(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/admin/telegram/test") {
+    if (!ensurePermission(adminUser, res, "settings.manage")) return;
+    const payload = await readJson(req);
+    const requestedIds = Array.isArray(payload.recipientIds) ? payload.recipientIds.map(String) : [];
+    const groupChats = (store.telegramRecipients || []).filter((item) => !requestedIds.length || requestedIds.includes(item.id)).map((item) => item.chatId);
+    const personalChats = store.users.filter((user) => user.isActive && user.telegramChatId && (!requestedIds.length || requestedIds.includes(`user:${user.id}`))).map((user) => user.telegramChatId);
+    const delivery = await sendTelegramText([...groupChats, ...personalChats], `✅ Тестовое уведомление\nОтправил: ${userNameForAudit(adminUser)}\nВремя: ${new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })}`);
+    return send(res, delivery.sent ? 200 : 502, { delivery });
   }
 
   if (req.method === "POST" && url.pathname === "/api/admin/pickup-points") {
@@ -2463,6 +2844,8 @@ const server = createServer(async (req, res) => {
 
 let telegramPollTimer = null;
 
+await ensureStore();
+
 server.listen(port, "0.0.0.0", () => {
   console.log(`Shashlik Like API listening on http://0.0.0.0:${port}`);
   if (telegramPollingEnabled) {
@@ -2481,8 +2864,9 @@ function shutdown(signal) {
   console.log(`Received ${signal}; stopping HTTP server`);
   const forceExit = setTimeout(() => process.exit(1), 10_000);
   forceExit.unref();
-  server.close(() => {
+  server.close(async () => {
     clearTimeout(forceExit);
+    if (databasePool) await databasePool.end().catch(() => undefined);
     process.exit(0);
   });
 }

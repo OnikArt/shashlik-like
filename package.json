@@ -12,7 +12,7 @@
     "dev:api": "node server/server.js",
     "build": "tsc -b && vite build",
     "start": "node server/server.js",
-    "start:layero": "node server/server.js",
+    "start:layero": "npm run build && node server/server.js",
     "preview": "node server/server.js",
     "lint": "tsc -b --noEmit",
     "typecheck": "tsc -b --noEmit",
@@ -22,11 +22,12 @@
     "@vitejs/plugin-react": "^5.1.1",
     "concurrently": "^9.2.1",
     "lucide-react": "^1.49.0",
+    "pg": "^8.23.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.10.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.7"
+    "vite": "^7.3.7"
   },
   "devDependencies": {
     "@types/react": "19.2.7",

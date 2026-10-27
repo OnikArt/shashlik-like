@@ -38,3 +38,9 @@ test("production rejects PUBLIC_SITE_URL without a URL scheme", async () => {
   assert.notEqual(result.code, 0);
   assert.match(result.output, /PUBLIC_SITE_URL must be a full URL including http:\/\/ or https:\/\//);
 });
+
+test("production refuses ephemeral file storage", async () => {
+  const result = await runServerWithEnvironment({ LAYERO_DATABASE_URL: "", DATABASE_URL: "" });
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /Persistent PostgreSQL is required in production/);
+});

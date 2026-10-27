@@ -78,6 +78,9 @@ type Addon = {
   isCustomerVisible?: boolean;
   sortOrder?: number;
 };
+type ModifierOption = { id: string; name: string; price: number; isActive: boolean; defaultSelected?: boolean; sortOrder?: number };
+type ModifierGroup = { id: string; name: string; selection: "single" | "multiple"; required: boolean; minSelections: number; maxSelections: number; options: ModifierOption[]; isActive: boolean; sortOrder?: number };
+type ModifierSelection = { groupId: string; optionIds: string[] };
 type Product = {
   id: string;
   slug: string;
@@ -96,6 +99,8 @@ type Product = {
   options?: string[];
   addonGroup?: string;
   addonIds?: string[];
+  modifierGroupIds?: string[];
+  freeOnionEnabled?: boolean;
   sortOrder: number;
 };
 type PickupPoint = {
@@ -138,6 +143,7 @@ type Bootstrap = {
   categories: Category[];
   products: Product[];
   addons: Addon[];
+  modifierGroups: ModifierGroup[];
   pickupPoints: PickupPoint[];
   settings: Settings;
 };
@@ -146,6 +152,8 @@ type CartItem = {
   quantity: number;
   option?: string;
   addons: string[];
+  modifiers?: ModifierSelection[];
+  onionChoice?: "with" | "without" | "";
 };
 type UserRole = "EMPLOYEE" | "MANAGER" | "CO_OWNER" | "OWNER";
 type ShiftType = "DAY" | "NIGHT";
@@ -166,6 +174,8 @@ type AdminUser = {
   telegramUserId: string;
   telegramChatId: string;
   telegramUsername: string;
+  telegramEvents?: string[];
+  telegramNotificationsEnabled?: boolean;
   isActive: boolean;
   lastLoginAt?: string;
   updatedAt?: string;
@@ -203,6 +213,7 @@ type AdminBootstrap = Bootstrap & {
   currentUser: AdminUser;
   permissions: string[];
   analyticsSummary: AnalyticsSummary | null;
+  telegramRecipients: Array<{ id: string; type: "group"; chatId: string; title: string; events: string[]; isActive: boolean; connectedAt?: string }>;
 };
 type Attribution = {
   utm_source: string;
@@ -239,6 +250,8 @@ type Order = {
     total: number;
     option?: string;
     addons: Array<{ id: string; name: string; price: number }>;
+    modifiers?: Array<{ groupId: string; groupName: string; options: Array<{ id: string; name: string; price: number }> }>;
+    onionChoice?: string;
   }>;
   subtotal: number;
   deliveryPrice: number;
@@ -282,6 +295,8 @@ type TrackingOrder = {
     quantityLabel?: string;
     option?: string;
     addons: Array<{ name: string }>;
+    modifiers?: Array<{ groupName: string; options: Array<{ name: string }> }>;
+    onionChoice?: string;
     total: number;
   }>;
   subtotal: number;
@@ -318,6 +333,19 @@ const lineItemTotal = (product: Product, quantity: number, addonsTotal = 0) =>
   Math.round((product.price + addonsTotal) * quantityUnits(product, quantity));
 const formatQuantity = (product: Product, quantity: number) =>
   isWeightedProduct(product) ? `${quantity} г` : `${quantity} шт`;
+const defaultModifierSelections = (product: Product, data: Bootstrap): ModifierSelection[] =>
+  (product.modifierGroupIds || []).flatMap((groupId) => {
+    const group = data.modifierGroups.find((item) => item.id === groupId && item.isActive);
+    if (!group) return [];
+    const defaults = group.options.filter((option) => option.isActive && option.defaultSelected).map((option) => option.id);
+    const firstAvailable = group.options.find((option) => option.isActive)?.id;
+    const optionIds = defaults.length ? defaults : group.required && firstAvailable ? [firstAvailable] : [];
+    return [{ groupId, optionIds }];
+  });
+const modifierSelectionTotal = (selections: ModifierSelection[], data: Bootstrap) => selections.reduce((sum, selection) => {
+  const group = data.modifierGroups.find((item) => item.id === selection.groupId);
+  return sum + selection.optionIds.reduce((optionSum, id) => optionSum + (group?.options.find((option) => option.id === id)?.price || 0), 0);
+}, 0);
 const roleLabel = (role: UserRole) =>
   ({
     EMPLOYEE: "Сотрудник",
@@ -509,6 +537,7 @@ function useBootstrap() {
         !payload.settings
       )
         throw new Error("Invalid API response");
+      payload.modifierGroups = Array.isArray(payload.modifierGroups) ? payload.modifierGroups : [];
       setData(payload);
     } catch {
       setError(
@@ -614,6 +643,10 @@ function useCart(data: Bootstrap | null) {
     () => new Map((data?.addons || []).map((addon) => [addon.id, addon])),
     [data],
   );
+  const modifierGroupsById = useMemo(
+    () => new Map((data?.modifierGroups || []).map((group) => [group.id, group])),
+    [data],
+  );
 
   const detailed = useMemo(
     () =>
@@ -628,21 +661,29 @@ function useCart(data: Bootstrap | null) {
             (sum, addon) => sum + addon.price,
             0,
           );
+          const modifiers = (item.modifiers || []).flatMap((selection) => {
+            const group = modifierGroupsById.get(selection.groupId);
+            if (!group) return [];
+            return [{ group, options: selection.optionIds.map((id) => group.options.find((option) => option.id === id)).filter(Boolean) as ModifierOption[] }];
+          });
+          const modifiersTotal = modifiers.reduce((sum, selection) => sum + selection.options.reduce((optionSum, option) => optionSum + option.price, 0), 0);
           return {
             ...item,
             product,
             addons,
-            lineTotal: lineItemTotal(product, item.quantity, addonsTotal),
+            modifiers,
+            lineTotal: lineItemTotal(product, item.quantity, addonsTotal + modifiersTotal),
           };
         })
         .filter(Boolean) as Array<
-        Omit<CartItem, "addons"> & {
+        Omit<CartItem, "addons" | "modifiers"> & {
           product: Product;
           addons: Addon[];
+          modifiers: Array<{ group: ModifierGroup; options: ModifierOption[] }>;
           lineTotal: number;
         }
       >,
-    [items, productsById, addonsById],
+    [items, productsById, addonsById, modifierGroupsById],
   );
 
   const subtotal = detailed.reduce((sum, item) => sum + item.lineTotal, 0);
@@ -662,11 +703,15 @@ function useCart(data: Bootstrap | null) {
     productId: string,
     option = "",
     addons: string[] = [],
+    modifiers: ModifierSelection[] = [],
+    onionChoice: "with" | "without" | "" = "",
   ) {
     return (
       item.productId === productId &&
       (item.option || "") === option &&
       item.addons.slice().sort().join(",") === addons.slice().sort().join(",")
+      && JSON.stringify(item.modifiers || []) === JSON.stringify(modifiers)
+      && (item.onionChoice || "") === onionChoice
     );
   }
 
@@ -675,19 +720,21 @@ function useCart(data: Bootstrap | null) {
     quantity: number,
     option = "",
     addons: string[] = [],
+    modifiers: ModifierSelection[] = [],
+    onionChoice: "with" | "without" | "" = "",
   ) {
     setItems((current) => {
       const existing = current.find((item) =>
-        sameItem(item, product.id, option, addons),
+        sameItem(item, product.id, option, addons, modifiers, onionChoice),
       );
       if (existing) {
         return current.map((item) =>
-          sameItem(item, product.id, option, addons)
+          sameItem(item, product.id, option, addons, modifiers, onionChoice)
             ? { ...item, quantity: item.quantity + quantity }
             : item,
         );
       }
-      return [...current, { productId: product.id, quantity, option, addons }];
+      return [...current, { productId: product.id, quantity, option, addons, modifiers, onionChoice }];
     });
   }
 
@@ -874,8 +921,10 @@ function App() {
     quantity: number,
     option = "",
     addons: string[] = [],
+    modifiers: ModifierSelection[] = [],
+    onionChoice: "with" | "without" | "" = "",
   ) => {
-    cart.add(product, quantity, option, addons);
+    cart.add(product, quantity, option, addons, modifiers, onionChoice);
     trackEvent("add_to_cart", {
       productId: product.id,
       quantity,
@@ -1365,7 +1414,7 @@ function ActiveOrderIndicator({ order }: { order: TrackingOrder }) {
           <small>{statusMessage(order)}</small>
         </span>
       </div>
-      <ol className="active-order-progress" aria-label="Этапы заказа">
+      <ol className="active-order-progress active-order-progress-desktop" aria-label="Этапы заказа">
         {stages.map((stage, index) => (
           <li
             key={stage.key}
@@ -1384,6 +1433,20 @@ function ActiveOrderIndicator({ order }: { order: TrackingOrder }) {
           </li>
         ))}
       </ol>
+      <details className="active-order-mobile-progress">
+        <summary>Все этапы</summary>
+        <ol className="active-order-progress" aria-label="Все этапы заказа">
+          {stages.map((stage, index) => (
+            <li
+              key={stage.key}
+              className={index < currentIndex ? "complete" : index === currentIndex ? "current" : "pending"}
+            >
+              <i><OrderStageIcon kind={stage.kind} /></i>
+              <span>{stage.label}</span>
+            </li>
+          ))}
+        </ol>
+      </details>
       <Link
         className="active-order-link"
         to={`/order/${encodeURIComponent(token)}`}
@@ -1407,6 +1470,7 @@ function Header({
   onThemeMode: (mode: ThemeMode) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const location = useLocation();
   const links = [
     ["Меню", "/menu"],
     ["Доставка", "/delivery"],
@@ -1542,6 +1606,8 @@ type HomeProps = {
     quantity: number,
     option?: string,
     addons?: string[],
+    modifiers?: ModifierSelection[],
+    onionChoice?: "with" | "without" | "",
   ) => void;
   cartCount: number;
   cartTotal: number;
@@ -1902,6 +1968,7 @@ function HomeHeader({
   activeOrder?: TrackingOrder | null;
 }) {
   const [open, setOpen] = useState(false);
+  const location = useLocation();
   const { favorites } = useFavorites();
   const secondaryPhone = formatRussianPhone(settings.phone);
   const navigation = [
@@ -1937,7 +2004,7 @@ function HomeHeader({
           >
             {navigation.map(([label, href]) => (
               <Link
-                className={activePath === href ? "active" : ""}
+                className={(activePath || location.pathname) === href ? "active" : ""}
                 key={href}
                 to={href}
                 onClick={() => setOpen(false)}
@@ -2784,6 +2851,8 @@ type MenuProps = {
     quantity: number,
     option?: string,
     addons?: string[],
+    modifiers?: ModifierSelection[],
+    onionChoice?: "with" | "without" | "",
   ) => void;
   cartCount: number;
   cartTotal: number;
@@ -3173,6 +3242,8 @@ function ProductCard({
     quantity: number,
     option?: string,
     addons?: string[],
+    modifiers?: ModifierSelection[],
+    onionChoice?: "with" | "without" | "",
   ) => void;
   favorite: boolean;
   onFavorite: (productId: string) => void;
@@ -3180,6 +3251,8 @@ function ProductCard({
   const [quantity, setQuantity] = useState(product.step || 1);
   const [option, setOption] = useState(product.options?.[0] || "");
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  const [selectedModifiers, setSelectedModifiers] = useState<ModifierSelection[]>(() => defaultModifierSelections(product, data));
+  const [onionChoice, setOnionChoice] = useState<"with" | "without">("with");
   const [configuring, setConfiguring] = useState(false);
   const configureButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -3191,13 +3264,14 @@ function ProductCard({
           product.addonGroup &&
           addon.group === product.addonGroup)),
   );
-  const hasModifiers = Boolean(product.options?.length || addons.length);
+  const modifierGroups = data.modifierGroups.filter((group) => group.isActive && product.modifierGroupIds?.includes(group.id));
+  const hasModifiers = Boolean(product.options?.length || addons.length || modifierGroups.length || product.freeOnionEnabled);
   const addonTotal = selectedAddons.reduce(
     (sum, id) =>
       sum + (data.addons.find((addon) => addon.id === id)?.price || 0),
     0,
   );
-  const linePrice = lineItemTotal(product, quantity, addonTotal);
+  const linePrice = lineItemTotal(product, quantity, addonTotal + modifierSelectionTotal(selectedModifiers, data));
 
   useEffect(() => {
     if (!configuring) return;
@@ -3215,7 +3289,7 @@ function ProductCard({
   }, [configuring]);
 
   function addConfigured() {
-    onAdd(product, quantity, option, selectedAddons);
+    onAdd(product, quantity, option, selectedAddons, selectedModifiers, product.freeOnionEnabled ? onionChoice : "");
     setConfiguring(false);
   }
 
@@ -3358,6 +3432,31 @@ function ProductCard({
                   ))}
                 </fieldset>
               ) : null}
+              {product.freeOnionEnabled ? (
+                <fieldset className="configurator-addons modifier-group">
+                  <legend>Лук бесплатно</legend>
+                  {[{ id: "with", name: "С луком" }, { id: "without", name: "Без лука" }].map((choice) => (
+                    <label key={choice.id}>
+                      <input type="radio" name={`onion-${product.id}`} checked={onionChoice === choice.id} onChange={() => setOnionChoice(choice.id as "with" | "without")} />
+                      <span>{choice.name}</span><strong>0 ₽</strong>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
+              {modifierGroups.map((group) => {
+                const selected = selectedModifiers.find((item) => item.groupId === group.id)?.optionIds || [];
+                return (
+                  <fieldset className="configurator-addons modifier-group" key={group.id}>
+                    <legend>{group.name}{group.required ? " · обязательно" : ""}</legend>
+                    {group.options.filter((item) => item.isActive).map((modifier) => (
+                      <label key={modifier.id}>
+                        <input type={group.selection === "single" ? "radio" : "checkbox"} name={`modifier-${product.id}-${group.id}`} checked={selected.includes(modifier.id)} onChange={(event) => setSelectedModifiers((current) => current.map((selection) => selection.groupId !== group.id ? selection : { ...selection, optionIds: group.selection === "single" ? [modifier.id] : event.target.checked ? [...selection.optionIds, modifier.id].slice(0, group.maxSelections) : selection.optionIds.filter((id) => id !== modifier.id) }))} />
+                        <span>{modifier.name}</span><strong>{modifier.price ? `+${money(modifier.price)}` : "0 ₽"}</strong>
+                      </label>
+                    ))}
+                  </fieldset>
+                );
+              })}
             </div>
             <footer>
               <div className="configurator-total">
@@ -3397,6 +3496,8 @@ function ProductPage({
     quantity: number,
     option?: string,
     addons?: string[],
+    modifiers?: ModifierSelection[],
+    onionChoice?: "with" | "without" | "",
   ) => void;
   cartCount: number;
   cartTotal: number;
@@ -3411,12 +3512,16 @@ function ProductPage({
   const [quantity, setQuantity] = useState(product?.step || 1);
   const [option, setOption] = useState(product?.options?.[0] || "");
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  const [selectedModifiers, setSelectedModifiers] = useState<ModifierSelection[]>(() => product ? defaultModifierSelections(product, data) : []);
+  const [onionChoice, setOnionChoice] = useState<"with" | "without">("with");
   const [activeImage, setActiveImage] = useState(0);
   const galleryTouch = useRef(0);
   useEffect(() => {
     setQuantity(product?.step || 1);
     setOption(product?.options?.[0] || "");
     setSelectedAddons([]);
+    setSelectedModifiers(product ? defaultModifierSelections(product, data) : []);
+    setOnionChoice("with");
     setActiveImage(0);
     if (product)
       trackEvent("product_view", {
@@ -3437,12 +3542,13 @@ function ProductPage({
   const addons = data.addons.filter(
     (addon) => addon.isActive && product.addonIds?.includes(addon.id),
   );
+  const modifierGroups = data.modifierGroups.filter((group) => group.isActive && product.modifierGroupIds?.includes(group.id));
   const addonTotal = selectedAddons.reduce(
     (sum, id) =>
       sum + (data.addons.find((addon) => addon.id === id)?.price || 0),
     0,
   );
-  const total = lineItemTotal(product, quantity, addonTotal);
+  const total = lineItemTotal(product, quantity, addonTotal + modifierSelectionTotal(selectedModifiers, data));
   const related = data.products
     .filter(
       (item) =>
@@ -3614,6 +3720,31 @@ function ProductPage({
                 ))}
               </fieldset>
             )}
+            {product.freeOnionEnabled && (
+              <fieldset className="product-detail-addons product-detail-modifiers">
+                <legend>Лук бесплатно</legend>
+                {[{ id: "with", name: "С луком" }, { id: "without", name: "Без лука" }].map((choice) => (
+                  <label className={onionChoice === choice.id ? "selected" : ""} key={choice.id}>
+                    <input type="radio" name={`product-onion-${product.id}`} checked={onionChoice === choice.id} onChange={() => setOnionChoice(choice.id as "with" | "without")} />
+                    <i aria-hidden="true"><Check /></i><span>{choice.name}</span><b>0 ₽</b>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            {modifierGroups.map((group) => {
+              const selected = selectedModifiers.find((item) => item.groupId === group.id)?.optionIds || [];
+              return (
+                <fieldset className="product-detail-addons product-detail-modifiers" key={group.id}>
+                  <legend>{group.name}{group.required ? " · обязательно" : ""}</legend>
+                  {group.options.filter((item) => item.isActive).map((modifier) => (
+                    <label className={selected.includes(modifier.id) ? "selected" : ""} key={modifier.id}>
+                      <input type={group.selection === "single" ? "radio" : "checkbox"} name={`product-modifier-${product.id}-${group.id}`} checked={selected.includes(modifier.id)} onChange={(event) => setSelectedModifiers((current) => current.map((selection) => selection.groupId !== group.id ? selection : { ...selection, optionIds: group.selection === "single" ? [modifier.id] : event.target.checked ? [...selection.optionIds, modifier.id].slice(0, group.maxSelections) : selection.optionIds.filter((id) => id !== modifier.id) }))} />
+                      <i aria-hidden="true"><Check /></i><span>{modifier.name}</span><b>{modifier.price ? `+${money(modifier.price)}` : "0 ₽"}</b>
+                    </label>
+                  ))}
+                </fieldset>
+              );
+            })}
             <div className="product-detail-buy">
               <Quantity
                 value={quantity}
@@ -3626,7 +3757,7 @@ function ProductPage({
             <button
               className="button primary"
               disabled={!product.isAvailable}
-              onClick={() => onAdd(product, quantity, option, selectedAddons)}
+              onClick={() => onAdd(product, quantity, option, selectedAddons, selectedModifiers, product.freeOnionEnabled ? onionChoice : "")}
             >
               <ShoppingBag size={19} />{" "}
               {product.isAvailable ? "Добавить в корзину" : "Недоступно"}
@@ -3887,6 +4018,8 @@ function CartContent({
             {item.addons.length ? (
               <small>{item.addons.map((addon) => addon.name).join(", ")}</small>
             ) : null}
+            {item.onionChoice && <small>{item.onionChoice === "without" ? "Без лука" : "С луком"}</small>}
+            {item.modifiers.length ? <small>{item.modifiers.flatMap((selection) => selection.options.map((option) => `${selection.group.name}: ${option.name}`)).join(" · ")}</small> : null}
             <Quantity
               value={item.quantity}
               step={item.product.step || 1}
@@ -7655,6 +7788,8 @@ function AdminProducts({
     isFeatured: false,
     options: [],
     addonIds: [],
+    modifierGroupIds: [],
+    freeOnionEnabled: false,
     sortOrder: 999,
   };
   const [editing, setEditing] = useState<Product>(blank);
@@ -7671,6 +7806,9 @@ function AdminProducts({
         ? current.addonIds.filter((id) => id !== addonId)
         : [...(current.addonIds || []), addonId],
     }));
+  }
+  function toggleProductModifierGroup(groupId: string) {
+    setEditing((current) => ({ ...current, modifierGroupIds: current.modifierGroupIds?.includes(groupId) ? current.modifierGroupIds.filter((id) => id !== groupId) : [...(current.modifierGroupIds || []), groupId] }));
   }
 
   async function handleImages(files: FileList) {
@@ -7892,6 +8030,14 @@ function AdminProducts({
                 </label>
               ))}
               {!admin.addons.length && <p>Сначала добавьте дополнение ниже.</p>}
+            </fieldset>
+            <fieldset className="admin-addon-picker">
+              <legend>Настройка товара</legend>
+              <label><input type="checkbox" checked={Boolean(editing.freeOnionEnabled)} onChange={(event) => setEditing({ ...editing, freeOnionEnabled: event.target.checked })} /> Бесплатный выбор: с луком / без лука</label>
+              {admin.modifierGroups.map((group) => (
+                <label key={group.id}><input type="checkbox" checked={Boolean(editing.modifierGroupIds?.includes(group.id))} onChange={() => toggleProductModifierGroup(group.id)} /> {group.name} · {group.selection === "single" ? "один вариант" : "несколько"}</label>
+              ))}
+              {!admin.modifierGroups.length && <p>Группы модификаторов пока не созданы.</p>}
             </fieldset>
             <label className="admin-wide-field">
               URL главного фото
@@ -8375,6 +8521,8 @@ function AdminAddons({
     isActive: true,
   };
   const [editing, setEditing] = useState<Addon | null>(null);
+  const [modifierEditing, setModifierEditing] = useState<ModifierGroup | null>(null);
+  const [modifierOptionsText, setModifierOptionsText] = useState("");
   const [uploadError, setUploadError] = useState("");
   const editable = can(admin, "products.edit");
   const normalized = query.trim().toLowerCase();
@@ -8391,6 +8539,17 @@ function AdminAddons({
       { method: editing.id ? "PUT" : "POST", body: JSON.stringify(editing) },
     );
     setEditing(null);
+  }
+  async function submitModifier(event: FormEvent) {
+    event.preventDefault();
+    if (!modifierEditing) return;
+    const options = modifierOptionsText.split("\n").map((line, index) => {
+      const [name, rawPrice] = line.split("|");
+      const previous = modifierEditing.options[index];
+      return { id: previous?.id || crypto.randomUUID?.() || `option-${index}`, name: name?.trim(), price: Math.max(0, Number(rawPrice || 0)), isActive: true, defaultSelected: previous?.defaultSelected || false, sortOrder: index };
+    }).filter((option) => option.name);
+    await save(modifierEditing.id ? `/api/admin/modifier-groups/${modifierEditing.id}` : "/api/admin/modifier-groups", { method: modifierEditing.id ? "PUT" : "POST", body: JSON.stringify({ ...modifierEditing, options }) });
+    setModifierEditing(null);
   }
   async function setImage(file: File) {
     try {
@@ -8459,6 +8618,14 @@ function AdminAddons({
           </article>
         ))}
       </div>
+      <section className="admin-card-form modifier-admin-section">
+        <div className="admin-section-title compact"><h3>Группы модификаторов</h3><p>Например, размер или выбор соуса. Варианты и цены задаются здесь, затем группа назначается товару.</p></div>
+        {editable && <button className="button ghost" type="button" onClick={() => { const draft: ModifierGroup = { id: "", name: "", selection: "single", required: false, minSelections: 0, maxSelections: 1, options: [], isActive: true }; setModifierEditing(draft); setModifierOptionsText(""); }}><Plus size={18} /> Новая группа</button>}
+        <div className="admin-table">
+          {admin.modifierGroups.map((group) => <article key={group.id}><div><strong>{group.name}</strong><p>{group.selection === "single" ? "Один вариант" : `Несколько · до ${group.maxSelections}`}{group.required ? " · обязательно" : ""}</p><small>{group.options.length} вариантов</small></div>{editable && <button type="button" onClick={() => { setModifierEditing(group); setModifierOptionsText(group.options.map((option) => `${option.name}|${option.price}`).join("\n")); }}>Редактировать</button>}</article>)}
+        </div>
+      </section>
+      {modifierEditing && <div className="admin-editor-shell" role="dialog" aria-modal="true" aria-label="Редактор группы модификаторов"><button className="admin-editor-backdrop" onClick={() => setModifierEditing(null)} aria-label="Закрыть" /><form className="admin-form admin-card-form admin-editor" onSubmit={submitModifier}><button className="admin-editor-close" type="button" onClick={() => setModifierEditing(null)} aria-label="Закрыть"><X /></button><div className="admin-section-title compact"><h3>{modifierEditing.id ? "Редактировать группу" : "Новая группа"}</h3></div><label>Название<input required value={modifierEditing.name} onChange={(event) => setModifierEditing({ ...modifierEditing, name: event.target.value })} /></label><div className="two-fields"><label>Тип<select value={modifierEditing.selection} onChange={(event) => setModifierEditing({ ...modifierEditing, selection: event.target.value as "single" | "multiple", maxSelections: event.target.value === "single" ? 1 : Math.max(2, modifierEditing.maxSelections) })}><option value="single">Один вариант</option><option value="multiple">Несколько вариантов</option></select></label><label><input type="checkbox" checked={modifierEditing.required} onChange={(event) => setModifierEditing({ ...modifierEditing, required: event.target.checked, minSelections: event.target.checked ? 1 : 0 })} /> Обязательный выбор</label></div>{modifierEditing.selection === "multiple" && <label>Максимум вариантов<input type="number" min="1" value={modifierEditing.maxSelections} onChange={(event) => setModifierEditing({ ...modifierEditing, maxSelections: Number(event.target.value) })} /></label>}<label>Варианты — один на строку, формат «Название|Цена»<textarea required rows={7} value={modifierOptionsText} onChange={(event) => setModifierOptionsText(event.target.value)} placeholder={"Сырный|50\nКлассический|0"} /></label><label><input type="checkbox" checked={modifierEditing.isActive} onChange={(event) => setModifierEditing({ ...modifierEditing, isActive: event.target.checked })} /> Активна</label><div className="admin-form-actions"><button className="button primary">Сохранить</button>{modifierEditing.id && <button className="button danger" type="button" onClick={() => { if (window.confirm("Удалить группу модификаторов?")) void save(`/api/admin/modifier-groups/${modifierEditing.id}`, { method: "DELETE" }).then(() => setModifierEditing(null)); }}>Удалить</button>}</div></form></div>}
       {editing && (
         <div
           className="admin-editor-shell"
@@ -9139,6 +9306,22 @@ function AdminUsers({
                 }
               />
             </label>
+            {editing.telegramChatId && (
+              <button
+                type="button"
+                className="button danger"
+                onClick={async () => {
+                  if (!window.confirm(`Отвязать Telegram от сотрудника «${userName(editing)}»?`)) return;
+                  await save(`/api/admin/users/${editing.id}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ ...editDraft, telegramLinkCode: "", telegramDisconnect: true }),
+                  });
+                  setEditing(null);
+                }}
+              >
+                Отвязать Telegram
+              </button>
+            )}
             <div className="switches">
               <label>
                 <input
@@ -9538,6 +9721,16 @@ function AdminSettings({
 }) {
   const [settings, setSettings] = useState(admin.settings);
   const editable = can(admin, "settings.manage");
+  const [groupCommand, setGroupCommand] = useState("");
+  const telegramEvents = [
+    ["new_order", "Новый заказ"], ["accepted", "Заказ принят"], ["cancelled", "Заказ отменён"], ["delivering", "Передан курьеру"], ["completed", "Заказ доставлен"], ["catalog_changes", "Меню и товары"], ["staff_changes", "Сотрудники"],
+  ];
+  async function telegramAction(url: string, init: RequestInit = {}) {
+    const response = await apiFetch(url, { ...init, headers: { "content-type": "application/json", authorization: `Bearer ${localStorage.getItem("admin-token") || ""}`, ...(init.headers || {}) } });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || payload.delivery?.reason || "Telegram вернул ошибку");
+    return payload;
+  }
   return (
     <>
       <div className="admin-section-title">
@@ -9567,6 +9760,23 @@ function AdminSettings({
                 placeholder="+7 (___) ___-__-__" />
             </label>
           ))}
+        </fieldset>
+        <fieldset className="settings-group telegram-recipient-settings">
+          <legend>Telegram · получатели уведомлений</legend>
+          <p>Личные чаты подключаются кодом сотрудника. Для группы создайте одноразовую команду и отправьте её в нужной Telegram-группе.</p>
+          <div className="admin-form-actions">
+            <button className="button ghost" type="button" disabled={!editable} onClick={async () => { try { const payload = await telegramAction("/api/admin/telegram/group-link", { method: "POST" }); setGroupCommand(payload.command); } catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось создать код"); } }}>Подключить группу</button>
+            <button className="button ghost" type="button" disabled={!editable} onClick={async () => { try { await telegramAction("/api/admin/telegram/test", { method: "POST", body: JSON.stringify({}) }); window.alert("Тестовое сообщение отправлено"); } catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось отправить тест"); } }}>Отправить тест</button>
+          </div>
+          {groupCommand && <div className="telegram-connect-command"><span>Отправьте в группе в течение 30 минут:</span><code>{groupCommand}</code><button type="button" onClick={() => void navigator.clipboard.writeText(groupCommand)}>Копировать</button></div>}
+          <div className="telegram-recipient-list">
+            {admin.users.filter((user) => user.telegramChatId).map((user) => {
+              const events = user.telegramEvents || telegramEvents.map(([id]) => id);
+              return <article key={user.id}><div><strong>{userName(user)}</strong><small>Личный чат · {roleLabel(user.role)}</small><div className="telegram-event-grid">{telegramEvents.map(([id, label]) => <label key={id}><input type="checkbox" disabled={!editable || user.telegramNotificationsEnabled === false} checked={events.includes(id)} onChange={(event) => { const nextEvents = event.target.checked ? [...events, id] : events.filter((item) => item !== id); void save(`/api/admin/telegram/users/${user.id}`, { method: "PUT", body: JSON.stringify({ events: nextEvents }) }); }} /> {label}</label>)}</div></div><div><label className="telegram-recipient-toggle"><input type="checkbox" disabled={!editable} checked={user.telegramNotificationsEnabled !== false} onChange={(event) => void save(`/api/admin/telegram/users/${user.id}`, { method: "PUT", body: JSON.stringify({ isActive: event.target.checked }) })} /> Уведомления</label><span className={user.telegramNotificationsEnabled !== false ? "status-pill ok" : "status-pill stop"}>{user.telegramNotificationsEnabled !== false ? "Активны" : "Отключены"}</span></div></article>;
+            })}
+            {admin.telegramRecipients.map((recipient) => <article key={recipient.id}><div><strong>{recipient.title}</strong><small>Telegram-группа</small><div className="telegram-event-grid">{telegramEvents.map(([id, label]) => <label key={id}><input type="checkbox" checked={recipient.events.includes(id)} onChange={(event) => { const events = event.target.checked ? [...recipient.events, id] : recipient.events.filter((item) => item !== id); void save(`/api/admin/telegram/recipients/${recipient.id}`, { method: "PUT", body: JSON.stringify({ events }) }); }} /> {label}</label>)}</div></div><div><span className={recipient.isActive ? "status-pill ok" : "status-pill stop"}>{recipient.isActive ? "Активна" : "Отключена"}</span>{editable && <button type="button" className="button danger" onClick={() => { if (window.confirm("Отключить эту Telegram-группу?")) void save(`/api/admin/telegram/recipients/${recipient.id}`, { method: "DELETE" }); }}>Отключить</button>}</div></article>)}
+            {!admin.telegramRecipients.length && !admin.users.some((user) => user.telegramChatId) && <p>Получатели пока не подключены.</p>}
+          </div>
         </fieldset>
         <fieldset className="settings-group">
           <legend>Социальные сети</legend>

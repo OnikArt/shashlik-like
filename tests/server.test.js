@@ -97,6 +97,26 @@ test("public catalog exposes explicit addon assignments", async () => {
   assert.equal(response.status, 200);
   assert.ok(body.products.length > 0);
   assert.ok(body.products.every((product) => Array.isArray(product.addonIds)));
+  assert.ok(body.products.every((product) => Array.isArray(product.modifierGroupIds)));
+  assert.ok(body.products.every((product) => typeof product.freeOnionEnabled === "boolean"));
+  assert.ok(Array.isArray(body.modifierGroups));
+});
+
+test("modifier groups are managed by admin and exposed to the storefront", async () => {
+  const token = await login();
+  const headers = { "content-type": "application/json", authorization: "Bearer " + token };
+  const created = await request("/api/admin/modifier-groups", { method: "POST", headers, body: JSON.stringify({ name: "Тестовый выбор", selection: "single", required: true, options: [{ name: "Первый", price: 0, isActive: true, defaultSelected: true }] }) });
+  assert.equal(created.response.status, 201);
+  const product = await request("/api/admin/products", { method: "POST", headers, body: JSON.stringify({ name: "Тест модификаторов", slug: "test-modifiers", description: "Тест", price: 100, unit: "1 шт", step: 1, categoryId: "shashlik", imageUrl: "/assets/placeholder.svg", images: ["/assets/placeholder.svg"], isActive: true, isAvailable: true, modifierGroupIds: [created.body.group.id], freeOnionEnabled: true }) });
+  assert.equal(product.response.status, 201);
+  const invalidOrder = await request("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customerName: "Тест", phone: "+7 900 000-00-00", deliveryType: "delivery", address: "ул. Ленина, 1", items: [{ productId: product.body.product.id, quantity: 1, addons: [], onionChoice: "with", modifiers: [{ groupId: created.body.group.id, optionIds: [] }] }] }) });
+  assert.equal(invalidOrder.response.status, 400);
+  const validOrder = await request("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customerName: "Тест", phone: "+7 900 000-00-00", deliveryType: "delivery", address: "ул. Ленина, 1", items: [{ productId: product.body.product.id, quantity: 1, addons: [], onionChoice: "without", modifiers: [{ groupId: created.body.group.id, optionIds: [created.body.group.options[0].id] }] }] }) });
+  assert.equal(validOrder.response.status, 201);
+  const catalog = await request("/api/bootstrap");
+  assert.ok(catalog.body.modifierGroups.some((group) => group.id === created.body.group.id));
+  const removed = await request(`/api/admin/modifier-groups/${created.body.group.id}`, { method: "DELETE", headers });
+  assert.equal(removed.response.status, 200);
 });
 
 test("invalid tracking token never exposes an order", async () => {
@@ -167,6 +187,29 @@ test("admin bootstrap does not expose Telegram secrets or one-time links", async
   assert.ok(result.body.permissions.includes("orders.change_status"));
   assert.equal("analyticsEvents" in result.body, false);
   assert.ok(result.body.analyticsSummary);
+});
+
+test("owner can configure personal Telegram event filters and create a one-time group command", async () => {
+  const token = await login();
+  const headers = { "content-type": "application/json", authorization: "Bearer " + token };
+  const updated = await request("/api/admin/telegram/users/owner", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ isActive: false, events: ["new_order", "staff_changes", "unknown_event"] })
+  });
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.body.user.telegramNotificationsEnabled, false);
+  assert.deepEqual(updated.body.user.telegramEvents, ["new_order", "staff_changes"]);
+
+  const link = await request("/api/admin/telegram/group-link", { method: "POST", headers, body: "{}" });
+  assert.equal(link.response.status, 201);
+  assert.match(link.body.command, /^\/connectgroup [A-F0-9]{12}$/);
+
+  const admin = await request("/api/admin/bootstrap", { headers: { authorization: "Bearer " + token } });
+  const owner = admin.body.users.find((user) => user.id === "owner");
+  assert.equal(owner.telegramNotificationsEnabled, false);
+  assert.deepEqual(owner.telegramEvents, ["new_order", "staff_changes"]);
+  assert.equal("telegramGroupLinks" in admin.body, false);
 });
 
 test("settings and per-kiosk aggregator links persist and are exposed publicly", async () => {

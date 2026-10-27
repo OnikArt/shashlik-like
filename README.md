@@ -1,6 +1,6 @@
 # Шашлык Лайк
 
-Коммерческий сайт ресторана на React 19, Vite 7 и Node.js HTTP API. Данные каталога, заказов, сотрудников, истории статусов и локальной аналитики хранятся в `server/data/store.json`.
+Коммерческий сайт ресторана на React 19, Vite 7 и Node.js HTTP API. Локально данные могут храниться в `server/data/store.json`; production запускается только с постоянной PostgreSQL через `LAYERO_DATABASE_URL` или `DATABASE_URL`. Загружаемые из админки изображения в production также сохраняются в PostgreSQL.
 
 ## Локальный запуск
 
@@ -23,7 +23,7 @@ set NODE_ENV=production
 npm.cmd start
 ```
 
-В production сервер раздаёт `dist`, API и SPA fallback на одном порту. Перед запуском настройте reverse proxy с HTTPS и постоянное резервное копирование `server/data/store.json`.
+В production сервер раздаёт `dist`, API и SPA fallback на одном порту. Запуск без PostgreSQL намеренно блокируется, чтобы новый deploy не сбросил заказы и настройки на эфемерном диске.
 
 Полная пошаговая инструкция для первого запуска в Railway, подключения GitHub, Volume, Telegram, домена, HTTPS, аналитики и резервных копий находится в [DEPLOYMENT.md](./DEPLOYMENT.md).
 
@@ -40,7 +40,15 @@ npm.cmd start
 | `TELEGRAM_CHAT_ID` | Резервный чат для заказов |
 | `PUBLIC_SITE_URL` | Канонический origin для sitemap, например `https://example.ru` |
 | `DATA_STORE_PATH` | Необязательный путь к JSON-базе; полезен для изолированных тестов |
+| `LAYERO_DATABASE_URL` / `DATABASE_URL` | Строка подключения к постоянной PostgreSQL; обязательна в production |
+| `ALLOW_EMPTY_DATABASE_INITIALIZATION` | Одноразовое явное разрешение создать совершенно новую пустую production-базу; при миграции существующего сайта не использовать |
 | `TELEGRAM_DISABLED` | Отключает Telegram для тестовой среды при значении `true` |
+
+Перед первым production-деплоем снимите копию прежнего `store.json` и каталога `uploads`, затем выполните безопасный импорт (существующая запись в PostgreSQL никогда не перезаписывается):
+
+```bash
+CONFIRM_PERSISTENT_IMPORT=YES LAYERO_DATABASE_URL="..." node scripts/import-store-to-postgres.js /absolute/store.json /absolute/uploads
+```
 
 Реальные секреты не должны попадать в `.env.example`, Git или клиентский bundle. После утечки Telegram-токен нужно отозвать у BotFather и выпустить новый.
 
@@ -77,7 +85,7 @@ npm.cmd start
 - **Настройки**: контакты, часы, доставка и ссылки агрегаторов.
 - **Аналитика**: трафик, воронка, источники, заказы и выручка.
 
-Категории пока редактируются через JSON-хранилище; отдельный CRUD-интерфейс категорий остаётся задачей следующего этапа.
+Категории доступны через серверный CRUD; production-данные сохраняются в PostgreSQL.
 
 ## SEO
 
