@@ -7,6 +7,7 @@
   "startCommand": "node server/server.js",
   "port": 4174,
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "ALLOW_EMPTY_DATABASE_INITIALIZATION": "true"
   }
 }
