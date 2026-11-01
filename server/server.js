@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { readFile, writeFile, mkdir, stat, rename, readdir, unlink } from "node:fs/promises";
 import { createReadStream, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -10,6 +11,7 @@ import { AddressValidationError, validateDeliveryAddress } from "./address-servi
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
+const maxTrustedCa = readFileSync(path.join(__dirname, "certs", "russian-trusted-root-ca.pem"), "utf8");
 
 function loadEnvFile() {
   const envPath = path.join(rootDir, ".env");
@@ -33,12 +35,19 @@ const isProduction = process.env.NODE_ENV === "production";
 const databaseUrl = String(process.env.LAYERO_DATABASE_URL || process.env.DATABASE_URL || "").trim();
 const storageBackend = databaseUrl ? "postgres" : "file";
 const { Pool } = pg;
-const databasePool = databaseUrl ? new Pool({ connectionString: databaseUrl, ssl: process.env.DATABASE_SSL === "false" ? false : { rejectUnauthorized: false }, max: 4 }) : null;
+const databaseConnectionTimeoutMs = Number(process.env.DATABASE_CONNECTION_TIMEOUT_MS || 8_000);
+const databasePool = databaseUrl ? new Pool({
+  connectionString: databaseUrl,
+  ssl: process.env.DATABASE_SSL === "false" ? false : { rejectUnauthorized: false },
+  max: 4,
+  connectionTimeoutMillis: databaseConnectionTimeoutMs
+}) : null;
 const port = Number(process.env.PORT || 4174);
 const tokenSecret = process.env.ADMIN_TOKEN_SECRET || "local-shashlik-like-secret";
 const adminPassword = process.env.ADMIN_PASSWORD || "admin";
 const telegramPollingEnabled = process.env.TELEGRAM_POLLING_ENABLED !== "false";
 const telegramApiBaseUrl = String(process.env.TELEGRAM_API_BASE_URL || "https://api.telegram.org").trim().replace(/\/+$/, "");
+const maxApiBaseUrl = String(process.env.MAX_API_BASE_URL || "https://platform-api2.max.ru").trim().replace(/\/+$/, "");
 const corsOriginPatterns = String(process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173,http://localhost:4175")
   .split(",")
   .map((value) => value.trim().replace(/\/$/, ""))
@@ -80,6 +89,9 @@ corsOriginPatterns.forEach((origin) => parseHttpOrigin(origin, "CORS_ALLOWED_ORI
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error("PORT must be an integer between 1 and 65535");
 }
+if (!Number.isFinite(databaseConnectionTimeoutMs) || databaseConnectionTimeoutMs < 1_000 || databaseConnectionTimeoutMs > 60_000) {
+  throw new Error("DATABASE_CONNECTION_TIMEOUT_MS must be between 1000 and 60000");
+}
 
 function isAllowedCorsOrigin(origin) {
   if (!origin) return false;
@@ -102,6 +114,9 @@ if (isProduction) {
   }
   if (telegramApiBaseUrl !== "https://api.telegram.org") {
     throw new Error("TELEGRAM_API_BASE_URL cannot be overridden in production");
+  }
+  if (maxApiBaseUrl !== "https://platform-api2.max.ru") {
+    throw new Error("MAX_API_BASE_URL cannot be overridden in production");
   }
   if (!existsSync(path.join(rootDir, "dist", "index.html"))) {
     throw new Error("Production frontend build is missing: run npm run build before npm start");
@@ -246,7 +261,7 @@ function normalizeTelegramEvents(events) {
 }
 
 const seedStore = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   categories: [
     { id: "shashlik", name: "Шашлыки", minPrice: "От 120 ₽ / 100 г", sortOrder: 1, isActive: true },
     { id: "shawarma", name: "Шаурма", minPrice: "От 240 ₽", sortOrder: 2 },
@@ -628,11 +643,21 @@ const seedStore = {
   telegramLinks: [],
   telegramGroupLinks: [],
   telegramRecipients: [],
+  telegramOutbox: [],
+  maxOutbox: [],
   modifierGroups: [],
   telegramUpdateOffset: 0
 };
 
-async function ensureStore() {
+const storageStartup = {
+  status: "starting",
+  error: "",
+  startedAt: Date.now(),
+  readyAt: 0
+};
+let storeInitializationPromise = null;
+
+async function initializeStore() {
   if (databasePool) {
     await databasePool.query(`
       CREATE TABLE IF NOT EXISTS app_state (
@@ -665,6 +690,25 @@ async function ensureStore() {
   if (!existsSync(storePath)) {
     await writeStore(seedStore);
   }
+}
+
+function ensureStore() {
+  if (!storeInitializationPromise) {
+    console.log(`[storage] Initializing ${storageBackend} storage`);
+    storeInitializationPromise = initializeStore()
+      .then(() => {
+        storageStartup.status = "ready";
+        storageStartup.readyAt = Date.now();
+        console.log(`[storage] ${storageBackend} storage is ready in ${storageStartup.readyAt - storageStartup.startedAt} ms`);
+      })
+      .catch((error) => {
+        storageStartup.status = "failed";
+        storageStartup.error = error?.message || "Storage initialization failed";
+        console.error(`[storage] Initialization failed: ${storageStartup.error}`);
+        throw error;
+      });
+  }
+  return storeInitializationPromise;
 }
 
 async function readStore() {
@@ -773,6 +817,11 @@ async function readStore() {
     store.schemaVersion = 6;
     changed = true;
   }
+  if (Number(store.schemaVersion || 0) < 7) {
+    if (!Array.isArray(store.maxOutbox)) store.maxOutbox = [];
+    store.schemaVersion = 7;
+    changed = true;
+  }
   if (!Array.isArray(store.users) || !store.users.length) {
     store.users = [createOwnerUser()];
     changed = true;
@@ -799,6 +848,10 @@ async function readStore() {
   }
   if (!Array.isArray(store.telegramOutbox)) {
     store.telegramOutbox = [];
+    changed = true;
+  }
+  if (!Array.isArray(store.maxOutbox)) {
+    store.maxOutbox = [];
     changed = true;
   }
   if (!Array.isArray(store.orders)) {
@@ -1226,7 +1279,7 @@ function ensurePermission(user, res, permission) {
 
 function adminBootstrap(store, currentUser) {
   const permissions = userPermissions(currentUser);
-  const { telegramLinks, telegramGroupLinks, telegramUpdateOffset, telegramOutbox, analyticsEvents, users, auditLog, ...safeStore } = store;
+  const { telegramLinks, telegramGroupLinks, telegramUpdateOffset, telegramOutbox, maxOutbox, analyticsEvents, users, auditLog, ...safeStore } = store;
   return {
     ...safeStore,
     orders: store.orders.map((order) => ({ ...order, availableTransitions: availableOrderTransitions(order) })),
@@ -1462,6 +1515,91 @@ async function sendTelegramText(chatIds, text, options = {}) {
   };
 }
 
+function maxConfigured() {
+  return process.env.MAX_DISABLED !== "true" && Boolean(String(process.env.MAX_BOT_TOKEN || "").trim() && String(process.env.MAX_CHAT_ID || "").trim());
+}
+
+async function maxRequest(pathname, body, query = {}) {
+  const token = String(process.env.MAX_BOT_TOKEN || "").trim();
+  if (!token) throw new Error("MAX_BOT_TOKEN is not set");
+  const url = new URL(maxApiBaseUrl + pathname);
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && String(value)) url.searchParams.set(key, String(value));
+  }
+  const requestBody = JSON.stringify(body);
+  let status;
+  let payload;
+  if (url.protocol === "https:") {
+    const result = await new Promise((resolve, reject) => {
+      const request = httpsRequest(url, {
+        method: "POST",
+        ca: maxTrustedCa,
+        headers: { authorization: token, "content-type": "application/json", "content-length": Buffer.byteLength(requestBody) }
+      }, (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          const raw = Buffer.concat(chunks).toString("utf8");
+          let parsed = {};
+          try { parsed = raw ? JSON.parse(raw) : {}; } catch { parsed = {}; }
+          resolve({ status: response.statusCode || 0, payload: parsed });
+        });
+      });
+      request.setTimeout(12_000, () => request.destroy(new Error("MAX request timed out")));
+      request.on("error", reject);
+      request.end(requestBody);
+    });
+    status = result.status;
+    payload = result.payload;
+  } else {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { authorization: token, "content-type": "application/json" },
+      body: requestBody,
+      signal: AbortSignal.timeout(12_000)
+    });
+    status = response.status;
+    payload = await response.json().catch(() => ({}));
+  }
+  if (status < 200 || status >= 300) {
+    const apiMessage = typeof payload?.message === "string"
+      ? payload.message
+      : typeof payload?.error === "string" ? payload.error : "";
+    throw new Error(apiMessage || "MAX HTTP " + status);
+  }
+  return payload;
+}
+
+async function maxRequestWithRetry(pathname, body, query = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await maxRequest(pathname, body, query);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
+async function sendMaxText(text) {
+  if (process.env.MAX_DISABLED === "true") return { sent: false, reason: "disabled" };
+  const chatId = String(process.env.MAX_CHAT_ID || "").trim();
+  if (!chatId) return { sent: false, reason: "no_recipients" };
+  try {
+    const result = await maxRequestWithRetry("/messages", { text }, { chat_id: chatId });
+    console.log(`[max] Notification delivered to configured chat (${String(text).length} chars)`);
+    return { sent: true, chatId, messageId: result?.body?.mid || result?.message?.body?.mid || result?.mid || "", reason: "" };
+  } catch (error) {
+    const configuredToken = String(process.env.MAX_BOT_TOKEN || "").trim();
+    const rawReason = String(error?.message || "MAX delivery failed");
+    const reason = (configuredToken ? rawReason.replaceAll(configuredToken, "[redacted]") : rawReason).slice(0, 240);
+    console.warn(`[max] Notification delivery failed: ${reason}`);
+    return { sent: false, chatId, reason };
+  }
+}
+
 function connectedChats(store, filter = () => true) {
   return store.users.filter((user) => user.isActive && user.telegramChatId && filter(user)).map((user) => user.telegramChatId);
 }
@@ -1538,6 +1676,11 @@ async function sendOrderTelegram(store, order) {
   };
 }
 
+async function sendOrderMax(order) {
+  if (!maxConfigured()) return { sent: false, reason: process.env.MAX_DISABLED === "true" ? "disabled" : "not_configured" };
+  return sendMaxText(telegramGroupOrderMessage(order));
+}
+
 async function refreshOrderTelegram(order) {
   const messages = order.telegram?.messages || [];
   await Promise.allSettled(messages.map((message) => telegramRequestWithRetry("editMessageText", {
@@ -1549,11 +1692,10 @@ async function refreshOrderTelegram(order) {
 }
 
 async function sendOrderStatusNotification(result) {
-  if (result.idempotent || !result.statusNotificationChats?.length) return;
-  await sendTelegramText(
-    result.statusNotificationChats,
-    `🔔 Заказ #${result.order.orderNumber}\n${orderStatusLabels[result.order.status]}`
-  );
+  if (result.idempotent) return;
+  const text = `🔔 Заказ #${result.order.orderNumber}\n${orderStatusLabels[result.order.status]}`;
+  if (result.statusNotificationChats?.length) await sendTelegramText(result.statusNotificationChats, text);
+  if (maxConfigured()) await sendMaxText(text);
 }
 
 function changeLabel(key) {
@@ -1647,7 +1789,46 @@ async function notifyAudit(store, actor, scope, action, subject, changes = []) {
     store.telegramOutbox.push({ id: crypto.randomUUID(), chatId, text, parseMode: "HTML", attempts: 0, nextAttemptAt: Date.now() + 60_000, createdAt: entry.createdAt });
   }
   store.telegramOutbox = store.telegramOutbox.slice(-500);
+  if (maxConfigured()) {
+    const maxText = [
+      `🔥 ${action.toUpperCase()}`,
+      "",
+      `📦 Объект: ${subject}`,
+      ...(changes.length ? ["", "📝 Изменения:", ...changes.map((change) => `• ${change}`)] : []),
+      "",
+      `👤 Изменил: ${entry.actor}`,
+      `🕒 Время: ${new Date(entry.createdAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })}`,
+      "",
+      "✅ Изменения сохранены"
+    ].join("\n");
+    const maxDelivery = await sendMaxText(maxText);
+    if (!maxDelivery.sent) {
+      store.maxOutbox.push({ id: crypto.randomUUID(), text: maxText, attempts: 0, nextAttemptAt: Date.now() + 60_000, createdAt: entry.createdAt });
+      store.maxOutbox = store.maxOutbox.slice(-500);
+    }
+  }
   return entry;
+}
+
+async function flushMaxOutbox() {
+  if (!maxConfigured()) return;
+  await mutateStore(async (store) => {
+    const now = Date.now();
+    const due = store.maxOutbox.filter((entry) => Number(entry.nextAttemptAt || 0) <= now).slice(0, 10);
+    if (!due.length) return { changed: false };
+    const completed = new Set();
+    for (const entry of due) {
+      const delivery = await sendMaxText(entry.text);
+      if (delivery.sent) completed.add(entry.id);
+      else {
+        entry.attempts = Number(entry.attempts || 0) + 1;
+        entry.nextAttemptAt = now + Math.min(30 * 60_000, 60_000 * 2 ** entry.attempts);
+        if (entry.attempts >= 6) completed.add(entry.id);
+      }
+    }
+    store.maxOutbox = store.maxOutbox.filter((entry) => !completed.has(entry.id));
+    return { changed: true };
+  });
 }
 
 async function flushTelegramOutbox() {
@@ -1927,21 +2108,30 @@ function sanitizeModifierGroup(input, fallback = {}) {
 async function sendHealth(res) {
   const checks = {
     frontend: !isProduction || existsSync(path.join(rootDir, "dist", "index.html")),
-    store: false,
+    store: storageStartup.status === "ready",
     persistentStorage: storageBackend === "postgres"
   };
-  try {
-    const store = await readStore();
-    checks.store = Boolean(store && Array.isArray(store.products) && Array.isArray(store.orders) && Array.isArray(store.users));
-  } catch (error) {
-    console.error("Health store check failed:", error.message);
+  if (checks.store && databasePool) {
+    try {
+      await databasePool.query("SELECT 1");
+    } catch {
+      checks.store = false;
+    }
   }
+  const initializing = storageStartup.status === "starting";
   const ready = checks.frontend && checks.store;
   return send(res, ready ? 200 : 503, {
-    status: ready ? "ok" : "unavailable",
+    status: ready ? "ok" : initializing ? "starting" : "unavailable",
+    ready,
     service: "shashlik-like",
     storage: storageBackend,
     checks,
+    notifications: {
+      telegram: process.env.TELEGRAM_DISABLED !== "true" && Boolean(process.env.TELEGRAM_BOT_TOKEN),
+      max: maxConfigured()
+    },
+    startupMs: (storageStartup.readyAt || Date.now()) - storageStartup.startedAt,
+    ...(storageStartup.status === "failed" ? { error: "Storage initialization failed" } : {}),
     uptime: Math.round(process.uptime())
   });
 }
@@ -1949,6 +2139,14 @@ async function sendHealth(res) {
 async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/health") {
     return sendHealth(res);
+  }
+
+  if (storageStartup.status !== "ready") {
+    return send(res, 503, {
+      error: storageStartup.status === "failed"
+        ? "Постоянное хранилище недоступно"
+        : "Сервис запускается, повторите запрос через несколько секунд"
+    });
   }
 
   const mediaMatch = url.pathname.match(/^\/api\/media\/([a-f0-9-]{36})$/);
@@ -2083,6 +2281,7 @@ async function api(req, res, url) {
           archivedByUserId: "",
           changeLog: [],
           telegram: { sent: false, reason: "pending" },
+          max: { sent: false, reason: "pending" },
           createdAt,
           updatedAt: createdAt,
           acceptedAt: "",
@@ -2138,6 +2337,29 @@ async function api(req, res, url) {
         created.order.telegram = telegram;
       } catch (error) {
         logEvent("error", "telegram.order_notification_failed", { orderId: created.order.id, reason: error.message });
+      }
+      try {
+        const max = await sendOrderMax(created.order);
+        await mutateStore(async (freshStore) => {
+          const savedOrder = freshStore.orders.find((item) => item.id === created.order.id);
+          if (!savedOrder) return { changed: false };
+          savedOrder.max = max;
+          if (!max.sent && !["disabled", "not_configured"].includes(max.reason)) {
+            freshStore.maxOutbox.push({
+              id: crypto.randomUUID(),
+              text: telegramGroupOrderMessage(savedOrder),
+              orderId: savedOrder.id,
+              attempts: 0,
+              nextAttemptAt: Date.now() + 60_000,
+              createdAt: new Date().toISOString()
+            });
+            freshStore.maxOutbox = freshStore.maxOutbox.slice(-500);
+          }
+          return { changed: true };
+        });
+        created.order.max = max;
+      } catch (error) {
+        logEvent("error", "max.order_notification_failed", { orderId: created.order.id, reason: error.message });
       }
       const order = created.order;
       logEvent("info", "checkout.order_created", { orderId: order.id, total: order.total, fulfillmentType: order.fulfillmentType });
@@ -2680,6 +2902,12 @@ if (req.method === "POST" && url.pathname === "/api/admin/addons") {
     return send(res, delivery.sent ? 200 : 502, { delivery });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/admin/max/test") {
+    if (!ensurePermission(adminUser, res, "settings.manage")) return;
+    const delivery = await sendMaxText(`✅ Тестовое уведомление MAX\nОтправил: ${userNameForAudit(adminUser)}\nВремя: ${new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })}`);
+    return send(res, delivery.sent ? 200 : 502, { delivery });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/admin/pickup-points") {
     if (!ensurePermission(adminUser, res, "settings.manage")) return;
     const payload = await readJson(req);
@@ -2844,15 +3072,25 @@ const server = createServer(async (req, res) => {
 
 let telegramPollTimer = null;
 
-await ensureStore();
-
+console.log(`[startup] Configuration validated; binding HTTP server to 0.0.0.0:${port}`);
+console.log(`[startup] MAX notifications ${maxConfigured() ? "configured" : "not configured"}`);
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Shashlik Like API listening on http://0.0.0.0:${port}`);
-  if (telegramPollingEnabled) {
-    void pollTelegram();
-    telegramPollTimer = setInterval(() => void pollTelegram(), 5000);
-    telegramPollTimer.unref();
-  }
+  console.log(`[startup] HTTP server is listening on http://0.0.0.0:${port}`);
+  void ensureStore()
+    .then(() => {
+      void flushMaxOutbox();
+      if (telegramPollingEnabled) {
+        console.log("[startup] Telegram polling enabled");
+        void pollTelegram();
+        telegramPollTimer = setInterval(() => void pollTelegram(), 5000);
+        telegramPollTimer.unref();
+      } else {
+        console.log("[startup] Telegram polling disabled");
+      }
+    })
+    .catch(() => {
+      console.error("[startup] HTTP server remains available for health diagnostics; API requests will return 503 until storage is restored");
+    });
 });
 
 let shuttingDown = false;

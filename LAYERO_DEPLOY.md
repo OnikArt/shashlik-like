@@ -7,7 +7,7 @@
 ## Что исправлено в конфигурации
 
 - Runtime указан как `node_web`, как требует схема Layero.
-- Runtime-план Layero для `node_web` не выполняет отдельный `buildCommand` (`dry-run` показывает `build_cmd: none`). Поэтому `startCommand` вызывает `npm run start:layero`, который сначала создаёт `dist`, затем запускает один Node.js-сервер.
+- Production build и запуск разделены: `buildCommand` выполняет `npm run build`, а `startCommand` запускает только `node server/server.js`. Сервер не тратит лимит запуска контейнера на повторную сборку.
 - Node.js слушает `0.0.0.0` и порт из `PORT`, по умолчанию `4174`.
 - Сервер проверяет production-переменные до приёма трафика и отдаёт собранный React из `dist`.
 - Прямые переходы на `/menu`, `/admin`, `/order/...`, `/checkout` и другие React-маршруты используют SPA fallback.
@@ -22,7 +22,8 @@
   "installCommand": "npm ci --include=dev",
   "nodeVersion": "22",
   "runtime": "node_web",
-  "startCommand": "npm run start:layero",
+  "buildCommand": "npm run build",
+  "startCommand": "node server/server.js",
   "port": 4174,
   "env": {
     "NODE_ENV": "production"
@@ -47,6 +48,9 @@
 | `ALLOW_EMPTY_DATABASE_INITIALIZATION` | `false` / не задавать при миграции | Нет | Устанавливать `true` только один раз для совершенно нового проекта без данных. Для существующего сайта сначала импортировать backup. |
 | `TELEGRAM_DISABLED` | `false` | Да для Telegram | Включает уведомления и обработку бота. |
 | `TELEGRAM_POLLING_ENABLED` | `true` | Да на единственном активном экземпляре | Long polling нельзя одновременно запускать в нескольких репликах. |
+| `MAX_BOT_TOKEN` | Новый токен из кабинета MAX | Да для MAX | Добавлять только как защищённую переменную Layero. Не хранить в Git. |
+| `MAX_CHAT_ID` | ID рабочего чата MAX | Да для MAX | Чат, куда отправляются новые заказы, статусы и административные изменения. |
+| `MAX_DISABLED` | `false` | Да для MAX | Включает исходящие уведомления MAX. |
 | `CORS_ALLOWED_ORIGINS` | `https://shashlik-like.layero.app` после закрепления этого slug в Layero | Да | Должен точно совпадать с `PUBLIC_SITE_URL`. Если панель выдаст другой адрес, замените оба значения. |
 | `TELEGRAM_API_BASE_URL` | **НЕ ДОБАВЛЯТЬ** | Нет | Только тестовая переменная для локального mock API; в production её переопределение запрещено. |
 
@@ -76,6 +80,9 @@ TELEGRAM_CHAT_ID=<точное значение из локального .env>
 PUBLIC_SITE_URL=https://shashlik-like.layero.app
 TELEGRAM_DISABLED=false
 TELEGRAM_POLLING_ENABLED=true
+MAX_BOT_TOKEN=<новый токен после перевыпуска>
+MAX_CHAT_ID=<id рабочего чата MAX>
+MAX_DISABLED=false
 CORS_ALLOWED_ORIGINS=https://shashlik-like.layero.app
 ```
 
@@ -93,7 +100,7 @@ CORS_ALLOWED_ORIGINS=https://shashlik-like.layero.app
 6. Убедитесь, что `PUBLIC_SITE_URL` начинается именно с `https://`, без завершающего `/`.
 7. Убедитесь, что у сервиса одна активная реплика с `TELEGRAM_POLLING_ENABLED=true`. На каждой дополнительной реплике polling должен быть `false`.
 8. Запустите повторный deploy последнего коммита. Не используйте development-команду `npm run dev`.
-9. В логах должны последовательно пройти `npm ci --include=dev`, `npm run build` из `start:layero` и запуск `server/server.js`.
+9. В логах должны последовательно пройти `npm ci --include=dev`, отдельный `npm run build` и затем запуск `server/server.js` без повторной сборки.
 10. После запуска откройте `<точный production URL>/health`. Ожидается HTTP 200 и `"status":"ok"`.
 11. Проверьте `/`, `/menu`, `/admin`, вход владельца и тестовый заказ на отдельном тестовом окружении.
 
@@ -105,6 +112,15 @@ CORS_ALLOWED_ORIGINS=https://shashlik-like.layero.app
 - Ошибка отправки повторяется до трёх раз. Не доставленные уведомления сохраняются в outbox постоянного хранилища.
 - Реальную отправку сообщения в чат выполняйте только после проверки, что `TELEGRAM_CHAT_ID` относится к тестовому чату.
 - Layero может останавливать неактивный serverless runtime. Для непрерывного long polling нужен режим без засыпания/always-on либо отдельный постоянно работающий worker. Иначе бот сможет получать обновления только пока runtime активен.
+
+## MAX
+
+- MAX получает новые заказы, смены статусов, изменения каталога и сотрудников через официальный API `https://platform-api2.max.ru`.
+- Токен передаётся только в заголовке `Authorization`; приложение не пишет его в логи и не возвращает в API.
+- Уведомление в общий чат не содержит телефона и адреса клиента: эти данные остаются в защищённой админ-панели.
+- Ошибка отправки повторяется до трёх раз, затем сообщение попадает в постоянный outbox и повторяется после следующего запуска.
+- Интерактивное управление заказами из MAX пока не включено: перед этим нужно связать MAX-пользователей с сотрудниками и настроить защищённый webhook. Это не влияет на уведомления и работу заказов в админ-панели.
+- Присланный в переписке токен необходимо перевыпустить и добавить в Layero уже новое значение.
 
 ## Миграция постоянных данных
 

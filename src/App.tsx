@@ -259,6 +259,7 @@ type Order = {
   status: OrderStatus;
   availableTransitions: OrderStatus[];
   telegram?: { sent: boolean; reason?: string };
+  max?: { sent: boolean; reason?: string };
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
@@ -9725,10 +9726,10 @@ function AdminSettings({
   const telegramEvents = [
     ["new_order", "Новый заказ"], ["accepted", "Заказ принят"], ["cancelled", "Заказ отменён"], ["delivering", "Передан курьеру"], ["completed", "Заказ доставлен"], ["catalog_changes", "Меню и товары"], ["staff_changes", "Сотрудники"],
   ];
-  async function telegramAction(url: string, init: RequestInit = {}) {
+  async function notificationAction(url: string, init: RequestInit = {}) {
     const response = await apiFetch(url, { ...init, headers: { "content-type": "application/json", authorization: `Bearer ${localStorage.getItem("admin-token") || ""}`, ...(init.headers || {}) } });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || payload.delivery?.reason || "Telegram вернул ошибку");
+    if (!response.ok) throw new Error(payload.error || payload.delivery?.reason || "Сервис уведомлений вернул ошибку");
     return payload;
   }
   return (
@@ -9765,8 +9766,8 @@ function AdminSettings({
           <legend>Telegram · получатели уведомлений</legend>
           <p>Личные чаты подключаются кодом сотрудника. Для группы создайте одноразовую команду и отправьте её в нужной Telegram-группе.</p>
           <div className="admin-form-actions">
-            <button className="button ghost" type="button" disabled={!editable} onClick={async () => { try { const payload = await telegramAction("/api/admin/telegram/group-link", { method: "POST" }); setGroupCommand(payload.command); } catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось создать код"); } }}>Подключить группу</button>
-            <button className="button ghost" type="button" disabled={!editable} onClick={async () => { try { await telegramAction("/api/admin/telegram/test", { method: "POST", body: JSON.stringify({}) }); window.alert("Тестовое сообщение отправлено"); } catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось отправить тест"); } }}>Отправить тест</button>
+            <button className="button ghost" type="button" disabled={!editable} onClick={async () => { try { const payload = await notificationAction("/api/admin/telegram/group-link", { method: "POST" }); setGroupCommand(payload.command); } catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось создать код"); } }}>Подключить группу</button>
+            <button className="button ghost" type="button" disabled={!editable} onClick={async () => { try { await notificationAction("/api/admin/telegram/test", { method: "POST", body: JSON.stringify({}) }); window.alert("Тестовое сообщение Telegram отправлено"); } catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось отправить тест"); } }}>Отправить тест</button>
           </div>
           {groupCommand && <div className="telegram-connect-command"><span>Отправьте в группе в течение 30 минут:</span><code>{groupCommand}</code><button type="button" onClick={() => void navigator.clipboard.writeText(groupCommand)}>Копировать</button></div>}
           <div className="telegram-recipient-list">
@@ -9776,6 +9777,13 @@ function AdminSettings({
             })}
             {admin.telegramRecipients.map((recipient) => <article key={recipient.id}><div><strong>{recipient.title}</strong><small>Telegram-группа</small><div className="telegram-event-grid">{telegramEvents.map(([id, label]) => <label key={id}><input type="checkbox" checked={recipient.events.includes(id)} onChange={(event) => { const events = event.target.checked ? [...recipient.events, id] : recipient.events.filter((item) => item !== id); void save(`/api/admin/telegram/recipients/${recipient.id}`, { method: "PUT", body: JSON.stringify({ events }) }); }} /> {label}</label>)}</div></div><div><span className={recipient.isActive ? "status-pill ok" : "status-pill stop"}>{recipient.isActive ? "Активна" : "Отключена"}</span>{editable && <button type="button" className="button danger" onClick={() => { if (window.confirm("Отключить эту Telegram-группу?")) void save(`/api/admin/telegram/recipients/${recipient.id}`, { method: "DELETE" }); }}>Отключить</button>}</div></article>)}
             {!admin.telegramRecipients.length && !admin.users.some((user) => user.telegramChatId) && <p>Получатели пока не подключены.</p>}
+          </div>
+        </fieldset>
+        <fieldset className="settings-group telegram-recipient-settings">
+          <legend>MAX · уведомления заказов</legend>
+          <p>Получатель MAX задаётся защищёнными переменными MAX_BOT_TOKEN и MAX_CHAT_ID в Layero.</p>
+          <div className="admin-form-actions">
+            <button className="button ghost" type="button" disabled={!editable} onClick={async () => { try { await notificationAction("/api/admin/max/test", { method: "POST", body: JSON.stringify({}) }); window.alert("Тестовое сообщение MAX отправлено"); } catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось отправить тест MAX"); } }}>Проверить MAX</button>
           </div>
         </fieldset>
         <fieldset className="settings-group">

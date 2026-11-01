@@ -1352,9 +1352,9 @@ section.admin-login > form {
     width: 100%;
   }
   .home-hero-footer {
-    right: 12px !important;
     bottom: 12px !important;
-    left: 12px !important;
+    left: 50% !important;
+    transform:translateX(-50%) !important;
   }
   .home-hero-benefits {
     border-radius: 20px !important;
@@ -2263,4 +2263,54 @@ section.admin-login > form {
   .production-standalone > .active-order-indicator { margin-top: 68px; }
   .cart-drawer .cart-row { grid-template-columns: 58px minmax(0, 1fr) auto; min-height: 88px; }
   .cart-drawer .cart-row > img { height: 58px; width: 58px; }
+}
+
+/* Use the roomy Menu-page header consistently across every public route. */
+@media (min-width: 1051px) {
+  .home-header {
+    height: 74px !important;
+    min-height: 74px !important;
+  }
+  .home-header-inner {
+    gap: 22px !important;
+    grid-template-columns: minmax(275px, auto) minmax(0, 1fr) auto !important;
+    height: 74px !important;
+    min-height: 74px !important;
+  }
+  .home-nav {
+    gap: clamp(14px, 1.45vw, 26px) !important;
+    min-width: 0;
+  }
+  .home-nav > a {
+    padding-block: 25px !important;
+    white-space: nowrap;
+  }
+  .home-nav > a::after { bottom: 18px !important; }
+  .home-header-actions {
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+}
+@media (min-width: 1051px) and (max-width: 1320px) {
+  .home-header-inner {
+    grid-template-columns: minmax(245px, auto) minmax(0, 1fr) auto !important;
+  }
+  .home-phone.secondary { display: none !important; }
+}
+@media (min-width: 761px) and (max-width: 1050px) {
+  .home-header {
+    height: 74px !important;
+    min-height: 74px !important;
+  }
+  .home-header-inner {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    height: 74px !important;
+    min-height: 74px !important;
+  }
+  .home-nav {
+    right: 24px !important;
+    top: 68px !important;
+  }
+  .home-menu-button { display: inline-flex !important; }
+  .home-phone { display: none !important; }
 }

@@ -135,7 +135,7 @@
 }
 
 .home-brand strong i {
-  color: var(--home-accent);
+  color: var(--color-primary);
   font-style: normal;
 }
 
@@ -11847,6 +11847,7 @@ html[data-theme] .admin-form textarea {
   width: 23px;
 }
 
+
 .contacts-actions .telegram .contacts-action-icon {
   background: rgba(16, 162, 231, 0.1);
   border: 1px solid #14a7e8;
@@ -12265,11 +12266,15 @@ html[data-theme] .admin-form textarea {
   width: 18px;
 }
 
+.contacts-map {
+  display:none;
+}
+
 .contacts-kiosk-body > div > a {
   align-items: center;
   border: 1px solid rgba(255, 255, 255, 0.38);
   border-radius: 99px;
-  color: #fff;
+  color: var(--color-primary);
   display: flex;
   font-size: 12px;
   font-weight: 650;

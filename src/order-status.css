@@ -650,7 +650,7 @@
   align-items: center;
   border: 1px solid #ff5a0a;
   border-radius: 999px;
-  color: #fff;
+  color: #000;
   display: flex;
   font-size: 13px;
   font-weight: 700;
@@ -661,6 +661,7 @@
 
 .order-status-support > a.telegram {
   border-color: #169bd5;
+  color:#000;
 }
 
 .order-status-support a svg {

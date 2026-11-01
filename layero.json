@@ -3,7 +3,8 @@
   "installCommand": "npm ci --include=dev",
   "nodeVersion": "22",
   "runtime": "node_web",
-  "startCommand": "npm run start:layero",
+  "buildCommand": "npm run build",
+  "startCommand": "node server/server.js",
   "port": 4174,
   "env": {
     "NODE_ENV": "production"

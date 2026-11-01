@@ -14,6 +14,7 @@ coverage/
 .vite/
 .cache/
 *.pem
+!server/certs/russian-trusted-root-ca.pem
 *.key
 *.p12
 *.pfx
