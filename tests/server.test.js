@@ -102,6 +102,44 @@ test("public catalog exposes explicit addon assignments", async () => {
   assert.ok(Array.isArray(body.modifierGroups));
 });
 
+test("file-backed checkout replays a keyed order without creating a duplicate", async () => {
+  const bootstrap = (await request("/api/bootstrap")).body;
+  const point = bootstrap.pickupPoints.find((entry) => entry.isActive);
+  const payload = { customerName: "Тест", phone: "+7 900 000-00-00", deliveryType: "pickup", pickupPointId: point.id, items: [{ productId: "pork-neck", quantity: 100, addons: [] }] };
+  const key = `local-file-order-${process.pid}`;
+  const headers = { "content-type": "application/json", "Idempotency-Key": key };
+  const first = await request("/api/orders", { method: "POST", headers, body: JSON.stringify(payload) });
+  const repeated = await request("/api/orders", { method: "POST", headers, body: JSON.stringify(payload) });
+  assert.equal(first.response.status, 201);
+  assert.equal(repeated.response.status, 201);
+  assert.deepEqual(repeated.body, first.body);
+  const conflict = await request("/api/orders", { method: "POST", headers, body: JSON.stringify({ ...payload, customerName: "Другой заказ" }) });
+  assert.equal(conflict.response.status, 409);
+});
+
+test("promotion quote and set order use server prices and preserve snapshots", async () => {
+  const token = await login();
+  const headers = { "content-type": "application/json", authorization: `Bearer ${token}` };
+  const created = await request("/api/admin/products", { method: "POST", headers, body: JSON.stringify({ name: "Тестовый сет", slug: "test-set", price: 400, unit: "1 шт", step: 1, categoryId: "combo", imageUrl: "/assets/placeholder.svg", isActive: true, isAvailable: true, components: [{ productId: "pork-neck", quantity: 100 }] }) });
+  assert.equal(created.response.status, 201);
+  const setId = created.body.product.id;
+  const invalid = await request("/api/promotions/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promoCode: "НЕИЗВЕСТНО", deliveryType: "pickup", items: [{ productId: setId, quantity: 1, addons: [] }] }) });
+  assert.equal(invalid.response.status, 400);
+  const quote = await request("/api/promotions/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promoCode: "САЙТ", deliveryType: "pickup", items: [{ productId: setId, quantity: 1, addons: [] }] }) });
+  assert.equal(quote.response.status, 200);
+  assert.equal(quote.body.discount, 40);
+  assert.equal(quote.body.total, 360);
+  const catalog = await request("/api/bootstrap");
+  const pickupPointId = catalog.body.pickupPoints[0].id;
+  const order = await request("/api/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customerName: "Тест", phone: "+7 900 000-00-00", deliveryType: "pickup", pickupPointId, promoCode: "САЙТ", items: [{ productId: setId, quantity: 1, addons: [] }] }) });
+  assert.equal(order.response.status, 201);
+  const admin = await request("/api/admin/bootstrap", { headers: { authorization: `Bearer ${token}` } });
+  const saved = admin.body.orders.find((item) => item.orderNumber === order.body.order.orderNumber);
+  assert.equal(saved.total, 360);
+  assert.equal(saved.discount, 40);
+  assert.equal(saved.items[0].components[0].name, "Свиная шея");
+});
+
 test("modifier groups are managed by admin and exposed to the storefront", async () => {
   const token = await login();
   const headers = { "content-type": "application/json", authorization: "Bearer " + token };

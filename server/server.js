@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import pg from "pg";
 import { availableOrderTransitions, legacyOrderStatuses, orderStatusLabels, orderStatuses, orderStatusTimestamp } from "./order-status.js";
 import { AddressValidationError, validateDeliveryAddress } from "./address-service.js";
+import { applyPromotion, sanitizePromotion } from "./promotions.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -262,14 +263,17 @@ function normalizeTelegramEvents(events) {
 
 const seedStore = {
   schemaVersion: 7,
+  promotions: [{ id: "site-10", code: "САЙТ", type: "percent", amount: 10, startsAt: "", endsAt: "", isActive: true, uses: 0 }],
   categories: [
-    { id: "shashlik", name: "Шашлыки", minPrice: "От 120 ₽ / 100 г", sortOrder: 1, isActive: true },
-    { id: "shawarma", name: "Шаурма", minPrice: "От 240 ₽", sortOrder: 2 },
-    { id: "doner", name: "Донер", minPrice: "От 250 ₽", sortOrder: 3 },
-    { id: "lyulya", name: "Люля-кебаб", minPrice: "От 250 ₽", sortOrder: 4 },
+    { id: "shashlik", name: "Шашлыки", minPrice: "От 130 ₽ / 100 г", sortOrder: 1, isActive: true },
+    { id: "shawarma", name: "Шаурма", minPrice: "От 270 ₽", sortOrder: 2 },
+    { id: "doner", name: "Донер", minPrice: "От 350 ₽", sortOrder: 3 },
+    { id: "lyulya", name: "Люля-кебаб", minPrice: "От 270 ₽", sortOrder: 4 },
+    { id: "fajitas", name: "Фахитос", minPrice: "350 ₽", sortOrder: 5 },
     { id: "sauces", name: "Соусы", minPrice: "От 50 ₽", sortOrder: 5 },
     { id: "bread", name: "Хлеб", minPrice: "60 ₽", sortOrder: 6 },
-    { id: "drinks", name: "Напитки", minPrice: "От 100 ₽", sortOrder: 7 }
+    { id: "drinks", name: "Напитки", minPrice: "", sortOrder: 7, isActive: false },
+    { id: "combo", name: "Сеты", minPrice: "Скоро появятся", sortOrder: 8, isActive: true }
   ],
   products: [
     {
@@ -309,7 +313,7 @@ const seedStore = {
       slug: "svinye-rebra",
       name: "Свиные рёбра",
       description: "Мясные рёбра на углях с плотной румяной корочкой.",
-      price: 150,
+      price: 160,
       unit: "100 г",
       step: 100,
       categoryId: "shashlik",
@@ -325,7 +329,7 @@ const seedStore = {
       slug: "svinaya-koreyka",
       name: "Свиная корейка",
       description: "Классическая свиная корейка для тех, кто любит уверенный вкус угля.",
-      price: 150,
+      price: 160,
       unit: "100 г",
       step: 100,
       categoryId: "shashlik",
@@ -341,7 +345,7 @@ const seedStore = {
       slug: "kurinye-krylyshki",
       name: "Куриные крылышки",
       description: "Крылышки с жаром углей и хрустящей корочкой.",
-      price: 120,
+      price: 130,
       unit: "100 г",
       step: 100,
       categoryId: "shashlik",
@@ -362,7 +366,7 @@ const seedStore = {
       step: 1,
       categoryId: "shashlik",
       imageUrl: "/assets/shashlik-hero-optimized.jpg",
-      isActive: true,
+      isActive: false,
       isAvailable: true,
       isFeatured: false,
       badge: "Лук бесплатно",
@@ -373,8 +377,8 @@ const seedStore = {
       slug: "kurinaya-shaurma-klassicheskaya",
       name: "Куриная классическая",
       description: "Классическая куриная шаурма. Можно выбрать стандартный или сырный лаваш.",
-      price: 240,
-      unit: "400 г",
+      price: 270,
+      unit: "1 шт",
       step: 1,
       categoryId: "shawarma",
       imageUrl: "/assets/shawarma-optimized.jpg",
@@ -390,8 +394,8 @@ const seedStore = {
       slug: "svinaya-shaurma-klassicheskaya",
       name: "Свиная классическая",
       description: "Свиная шаурма в лаваше с угольным мясом и соусом.",
-      price: 250,
-      unit: "400 г",
+      price: 280,
+      unit: "1 шт",
       step: 1,
       categoryId: "shawarma",
       imageUrl: "/assets/shawarma-optimized.jpg",
@@ -406,9 +410,9 @@ const seedStore = {
       id: "chicken-shawarma-xxl",
       slug: "kurinaya-shaurma-xxl",
       name: "Куриная шаурма XXL",
-      description: "Большая куриная шаурма 600 г для плотного заказа.",
-      price: 350,
-      unit: "600 г",
+      description: "Куриная шаурма XXL.",
+      price: 370,
+      unit: "1 шт",
       step: 1,
       categoryId: "shawarma",
       imageUrl: "/assets/shawarma-optimized.jpg",
@@ -423,9 +427,9 @@ const seedStore = {
       id: "pork-shawarma-xxl",
       slug: "svinaya-shaurma-xxl",
       name: "Свиная шаурма XXL",
-      description: "Большая свиная шаурма 600 г с мясом на углях.",
-      price: 370,
-      unit: "600 г",
+      description: "Свиная шаурма XXL.",
+      price: 380,
+      unit: "1 шт",
       step: 1,
       categoryId: "shawarma",
       imageUrl: "/assets/shawarma-optimized.jpg",
@@ -440,9 +444,9 @@ const seedStore = {
       id: "chicken-doner",
       slug: "doner-kurinyy-klassicheskiy",
       name: "Донер куриный классический",
-      description: "Куриный донер 300 г с горячим мясом и свежими овощами.",
-      price: 250,
-      unit: "300 г",
+      description: "Куриный классический донер.",
+      price: 350,
+      unit: "1 шт",
       step: 1,
       categoryId: "doner",
       imageUrl: "/assets/shawarma-optimized.jpg",
@@ -456,9 +460,9 @@ const seedStore = {
       id: "pork-doner",
       slug: "doner-svinoy-klassicheskiy",
       name: "Донер свиной классический",
-      description: "Свиной донер 300 г с мясом на углях.",
-      price: 270,
-      unit: "300 г",
+      description: "Свиной классический донер.",
+      price: 350,
+      unit: "1 шт",
       step: 1,
       categoryId: "doner",
       imageUrl: "/assets/shawarma-optimized.jpg",
@@ -472,9 +476,9 @@ const seedStore = {
       id: "chicken-lyulya",
       slug: "lyulya-kuritsa",
       name: "Люля-кебаб из курицы",
-      description: "Куриный люля-кебаб 120 г. Дополнительный лук — бесплатно.",
-      price: 250,
-      unit: "120 г",
+      description: "Куриный люля-кебаб. Дополнительный лук — бесплатно.",
+      price: 270,
+      unit: "1 шт",
       step: 1,
       categoryId: "lyulya",
       imageUrl: "/assets/shashlik-hero-optimized.jpg",
@@ -488,9 +492,9 @@ const seedStore = {
       id: "beef-lyulya",
       slug: "lyulya-govyadina",
       name: "Люля-кебаб из говядины",
-      description: "Говяжий люля-кебаб 120 г. Дополнительный лук — бесплатно.",
-      price: 270,
-      unit: "120 г",
+      description: "Говяжий люля-кебаб. Дополнительный лук — бесплатно.",
+      price: 290,
+      unit: "1 шт",
       step: 1,
       categoryId: "lyulya",
       imageUrl: "/assets/shashlik-hero-optimized.jpg",
@@ -500,10 +504,13 @@ const seedStore = {
       badge: "Дополнительный лук бесплатно",
       sortOrder: 14
     },
+    { id: "mixed-shawarma", slug: "shaurma-miks", name: "Шаурма микс", description: "Курица и свинина.", price: 270, unit: "1 шт", step: 1, categoryId: "shawarma", imageUrl: "/assets/placeholder.svg", isActive: true, isAvailable: true, isFeatured: false, addonGroup: "wrap", sortOrder: 15 },
+    { id: "chicken-fajitas", slug: "fahitos-kurinyy", name: "Фахитос куриный", description: "", price: 350, unit: "1 шт", step: 1, categoryId: "fajitas", imageUrl: "/assets/placeholder.svg", isActive: true, isAvailable: true, isFeatured: false, sortOrder: 16 },
+    { id: "pork-fajitas", slug: "fahitos-svinoy", name: "Фахитос свиной", description: "", price: 350, unit: "1 шт", step: 1, categoryId: "fajitas", imageUrl: "/assets/placeholder.svg", isActive: true, isAvailable: true, isFeatured: false, sortOrder: 17 },
     {
       id: "garlic-sauce",
       slug: "smetanno-chesnochnyy",
-      name: "Сметанно-чесночный",
+      name: "Чесночный соус",
       description: "Сметанно-чесночный соус к мясу и шаурме.",
       price: 50,
       unit: "1 шт",
@@ -534,9 +541,9 @@ const seedStore = {
       id: "flatbread",
       slug: "lepeshka",
       name: "Лепёшка",
-      description: "Лепёшка 300 г к шашлыку и соусам.",
+      description: "Лепёшка к шашлыку и соусам.",
       price: 60,
-      unit: "300 г",
+      unit: "1 шт",
       step: 1,
       categoryId: "bread",
       imageUrl: "/assets/bread.svg",
@@ -555,7 +562,7 @@ const seedStore = {
       step: 1,
       categoryId: "drinks",
       imageUrl: "/assets/drink.svg",
-      isActive: true,
+      isActive: false,
       isAvailable: true,
       isFeatured: false,
       options: ["Фейхоа", "Гранат", "Лайм", "Горные травы", "Тархун", "Вишня"],
@@ -571,7 +578,7 @@ const seedStore = {
       step: 1,
       categoryId: "drinks",
       imageUrl: "/assets/drink.svg",
-      isActive: true,
+      isActive: false,
       isAvailable: true,
       isFeatured: false,
       sortOrder: 19
@@ -586,7 +593,7 @@ const seedStore = {
       step: 1,
       categoryId: "drinks",
       imageUrl: "/assets/drink.svg",
-      isActive: true,
+      isActive: false,
       isAvailable: true,
       isFeatured: false,
       sortOrder: 20
@@ -601,14 +608,14 @@ const seedStore = {
       step: 1,
       categoryId: "drinks",
       imageUrl: "/assets/drink.svg",
-      isActive: true,
+      isActive: false,
       isAvailable: true,
       isFeatured: false,
       sortOrder: 21
     }
   ],
   addons: [
-    { id: "jalapeno", name: "Перец халапеньо", price: 50, isActive: true, group: "wrap" },
+    { id: "jalapeno", name: "Перец халапеньо", price: 40, isActive: true, group: "wrap" },
     { id: "cheese-sauce", name: "Сырный соус", price: 50, isActive: true, group: "wrap" },
     { id: "bbq", name: "BBQ соус", price: 50, isActive: true, group: "wrap" },
     { id: "processed-cheese", name: "Плавленый сыр", price: 50, isActive: true, group: "wrap" },
@@ -674,6 +681,10 @@ async function initializeStore() {
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `);
+    const idempotencySchema = await databasePool.query("SELECT to_regclass('order_idempotency') AS table_name");
+    if (!idempotencySchema.rows[0]?.table_name) {
+      throw new Error("Order idempotency schema is missing; apply the reviewed SQL migration before starting this version");
+    }
     const existing = await databasePool.query("SELECT 1 FROM app_state WHERE id = 'primary'");
     if (!existing.rowCount) {
       if (isProduction && process.env.ALLOW_EMPTY_DATABASE_INITIALIZATION !== "true") {
@@ -711,14 +722,15 @@ function ensureStore() {
   return storeInitializationPromise;
 }
 
-async function readStore() {
+async function readStore(retry = 0) {
   await ensureStore();
   let store;
   try {
     if (databasePool) {
-      const result = await databasePool.query("SELECT data FROM app_state WHERE id = 'primary'");
+      const result = await databasePool.query("SELECT data, updated_at::text AS version FROM app_state WHERE id = 'primary'");
       if (!result.rowCount) throw new Error("PostgreSQL app_state is empty");
       store = result.rows[0].data;
+      storeVersions.set(store, result.rows[0].version);
     } else {
       const raw = await readFile(storePath, "utf8");
       if (!raw.trim()) throw new Error("Store is empty");
@@ -822,6 +834,16 @@ async function readStore() {
     store.schemaVersion = 7;
     changed = true;
   }
+  if (!Array.isArray(store.promotions)) {
+    store.promotions = [{ id: "site-10", code: "САЙТ", type: "percent", amount: 10, startsAt: "", endsAt: "", isActive: true, uses: 0 }];
+    changed = true;
+  }
+  if (!store.categories.some((category) => category.id === "combo")) {
+    store.categories.push({ id: "combo", name: "Сеты", minPrice: "Скоро появятся", sortOrder: 8, isActive: true });
+    changed = true;
+  }
+  const setCategory = store.categories.find((category) => category.id === "combo");
+  if (setCategory?.name === "Комбо") { setCategory.name = "Сеты"; changed = true; }
   if (!Array.isArray(store.users) || !store.users.length) {
     store.users = [createOwnerUser()];
     changed = true;
@@ -942,21 +964,40 @@ for (const product of store.products || []) {
     if (typeof order.archivedByUserId !== "string") { order.archivedByUserId = ""; changed = true; }
     if (!Array.isArray(order.changeLog)) { order.changeLog = []; changed = true; }
   }
-  if (changed) await writeStore(store);
+  if (changed) {
+    try {
+      await writeStore(store);
+    } catch (error) {
+      if (error instanceof StoreConflictError && retry < 5) return readStore(retry + 1);
+      throw error;
+    }
+  }
   return store;
 }
 
 let storeWriteQueue = Promise.resolve();
+const storeVersions = new WeakMap();
+
+class StoreConflictError extends Error {
+  constructor() {
+    super("Store was changed by another process");
+    this.httpStatus = 409;
+    this.code = "store_conflict";
+  }
+}
 
 function writeStore(store) {
   const snapshot = JSON.stringify(store, null, 2);
   const operation = storeWriteQueue.then(async () => {
     if (databasePool) {
+      const version = storeVersions.get(store);
+      if (!version) throw new StoreConflictError();
       const result = await databasePool.query(
-        "UPDATE app_state SET data = $1::jsonb, updated_at = now() WHERE id = 'primary'",
-        [snapshot]
+        "UPDATE app_state SET data = $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') WHERE id = 'primary' AND updated_at = $2::timestamptz RETURNING updated_at::text AS version",
+        [snapshot, version]
       );
-      if (!result.rowCount) throw new Error("PostgreSQL app_state is not initialized");
+      if (!result.rowCount) throw new StoreConflictError();
+      storeVersions.set(store, result.rows[0].version);
       return;
     }
     await mkdir(dataDir, { recursive: true });
@@ -987,10 +1028,68 @@ function writeStore(store) {
 
 let storeMutationQueue = Promise.resolve();
 
-function mutateStore(mutator) {
+function mutateStore(mutator, idempotency = null) {
   const operation = storeMutationQueue.then(async () => {
+    if (databasePool) {
+      const client = await databasePool.connect();
+      try {
+        await client.query("BEGIN");
+        const current = await client.query("SELECT data FROM app_state WHERE id = 'primary' FOR UPDATE");
+        if (!current.rowCount) throw new Error("PostgreSQL app_state is not initialized");
+        if (idempotency) {
+          const previous = await client.query("SELECT request_hash, response FROM order_idempotency WHERE key = $1", [idempotency.key]);
+          if (previous.rowCount) {
+            if (previous.rows[0].request_hash !== idempotency.hash) {
+              const conflict = new Error("Этот ключ уже использован для другого заказа");
+              conflict.httpStatus = 409;
+              conflict.code = "idempotency_conflict";
+              throw conflict;
+            }
+            await client.query("COMMIT");
+            return { replayed: true, response: previous.rows[0].response };
+          }
+          idempotency.onNew();
+        }
+        const store = current.rows[0].data;
+        const result = await mutator(store);
+        if (result?.changed !== false) {
+          await client.query("UPDATE app_state SET data = $1::jsonb, updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond') WHERE id = 'primary'", [JSON.stringify(store)]);
+        }
+        if (idempotency) {
+          const response = { order: { orderNumber: result.order.orderNumber, trackingToken: result.order.trackingToken, status: result.order.status } };
+          await client.query("INSERT INTO order_idempotency (key, request_hash, order_id, response) VALUES ($1, $2, $3, $4::jsonb)", [idempotency.key, idempotency.hash, result.order.id, JSON.stringify(response)]);
+        }
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
     const store = await readStore();
+    if (idempotency) {
+      const previous = store.orderIdempotency?.[idempotency.key];
+      if (previous) {
+        if (previous.hash !== idempotency.hash) {
+          const conflict = new Error("Этот ключ уже использован для другого заказа");
+          conflict.httpStatus = 409;
+          conflict.code = "idempotency_conflict";
+          throw conflict;
+        }
+        return { replayed: true, response: previous.response };
+      }
+      idempotency.onNew();
+    }
     const result = await mutator(store);
+    if (idempotency) {
+      store.orderIdempotency ||= {};
+      store.orderIdempotency[idempotency.key] = {
+        hash: idempotency.hash,
+        response: { order: { orderNumber: result.order.orderNumber, trackingToken: result.order.trackingToken, status: result.order.status } }
+      };
+    }
     if (result?.changed !== false) await writeStore(store);
     return result;
   });
@@ -1025,6 +1124,7 @@ function publicOrderDto(order, store) {
     items: order.items.map((item) => ({
       productId: item.productId,
       name: item.name,
+      components: item.components || [],
       imageUrl: productsById.get(item.productId)?.imageUrl || "/assets/placeholder.svg",
       quantity: item.quantity,
       quantityLabel: item.quantityLabel,
@@ -1035,6 +1135,8 @@ function publicOrderDto(order, store) {
       total: item.total
     })),
     subtotal: order.subtotal,
+    promoCode: order.promoCode || "",
+    discount: order.discount || 0,
     deliveryPrice: order.deliveryPrice,
     total: order.total,
     pickupPointName: order.fulfillmentType === "pickup" ? order.pickupPointName : "",
@@ -1139,6 +1241,18 @@ function enforceRateLimit(req, res, scope, limit, windowMs) {
   });
   res.end(JSON.stringify({ error: "Слишком много запросов. Попробуйте немного позже." }));
   return false;
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])]));
+  }
+  return value;
+}
+
+function orderRequestHash(payload) {
+  return crypto.createHash("sha256").update(JSON.stringify(canonicalJson(payload))).digest("hex");
 }
 
 function logEvent(level, event, details = {}) {
@@ -1260,9 +1374,10 @@ function lineItemTotal(product, quantity, addonsTotal = 0) {
 function publicStore(store) {
   return {
     categories: store.categories.filter((category) => category.isActive !== false).sort((a, b) => a.sortOrder - b.sortOrder),
-    products: store.products.filter((p) => p.isActive).sort((a, b) => a.sortOrder - b.sortOrder),
+    products: store.products.filter((p) => p.isActive).map((product) => product.categoryId === "combo" ? { ...product, isAvailable: product.isAvailable && Array.isArray(product.components) && product.components.length > 0 && product.components.every((component) => store.products.some((item) => item.id === component.productId && item.isActive && item.isAvailable)) } : product).sort((a, b) => a.sortOrder - b.sortOrder),
     addons: store.addons.filter((a) => a.isActive && a.isCustomerVisible !== false).sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999)),
     modifierGroups: (store.modifierGroups || []).filter((group) => group.isActive !== false),
+    promotions: (store.promotions || []).filter((promotion) => promotion.isActive && (!promotion.startsAt || Date.parse(promotion.startsAt) <= Date.now()) && (!promotion.endsAt || Date.parse(promotion.endsAt) > Date.now())).map(({ code, type, amount }) => ({ code, type, amount })),
     pickupPoints: store.pickupPoints.filter((p) => p.isActive).sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999)),
     settings: store.settings
   };
@@ -1282,6 +1397,7 @@ function adminBootstrap(store, currentUser) {
   const { telegramLinks, telegramGroupLinks, telegramUpdateOffset, telegramOutbox, maxOutbox, analyticsEvents, users, auditLog, ...safeStore } = store;
   return {
     ...safeStore,
+    promotions: hasPermission(currentUser, "products.price_edit") ? (store.promotions || []) : [],
     orders: store.orders.map((order) => ({ ...order, availableTransitions: availableOrderTransitions(order) })),
     orderStatusHistory: store.orderStatusHistory,
     users: (hasPermission(currentUser, "users.view") ? store.users : store.users.filter((user) => user.id === currentUser.id)).map(serializeUser),
@@ -1345,6 +1461,12 @@ function calculateOrder(store, payload) {
     if (!product || !product.isActive || !product.isAvailable) {
       throw new Error("Товар недоступен");
     }
+    const components = product.categoryId === "combo" ? (product.components || []).map((component) => {
+      const included = productsById.get(component.productId);
+      if (!included || !included.isActive || !included.isAvailable || included.categoryId === "combo") throw new Error("Один из товаров сета недоступен");
+      return { productId: included.id, name: included.name, quantity: component.quantity, unit: included.unit };
+    }) : [];
+    if (product.categoryId === "combo" && !components.length) throw new Error("Состав сета не указан");
     const quantity = Number(item.quantity);
     const step = Math.max(Number(product.step || 1), 1);
     const quantityInSteps = quantity / step;
@@ -1393,6 +1515,7 @@ function calculateOrder(store, payload) {
     items.push({
       productId: product.id,
       name: product.name,
+      components,
       unit: product.unit,
       price: product.price,
       quantity,
@@ -1408,7 +1531,8 @@ function calculateOrder(store, payload) {
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
   const deliveryType = payload.deliveryType === "pickup" ? "pickup" : "delivery";
   const deliveryPrice = deliveryType === "delivery" && subtotal < settings.freeDeliveryFrom ? settings.deliveryPrice : 0;
-  return { items, subtotal, deliveryPrice, total: subtotal + deliveryPrice, deliveryType };
+  const { promotion, discount } = applyPromotion(store.promotions, payload.promoCode, subtotal);
+  return { items, subtotal, discount, promotion, deliveryPrice, total: Math.max(0, subtotal - discount + deliveryPrice), deliveryType };
 }
 
 function sanitizeCategory(input, fallback = {}) {
@@ -1450,6 +1574,7 @@ function telegramMessage(order) {
     lines.push((item.quantityLabel || item.quantity + " × " + item.unit) + " — " + item.total + " ₽");
   });
   lines.push("", "────────────────", "Товары: " + order.subtotal + " ₽", "Доставка: " + order.deliveryPrice + " ₽", "ИТОГО: " + order.total + " ₽");
+  if (order.promoCode) lines.splice(lines.length - 1, 0, `Промокод: ${order.promoCode} (${order.promotionSnapshot?.type === "percent" ? `${order.promotionSnapshot.amount}%` : `${order.promotionSnapshot?.amount || 0} ₽`})`, `Сумма до скидки: ${order.subtotal} ₽`, `Скидка: −${order.discount || 0} ₽`);
   if (order.comment) lines.push("", "Комментарий: " + order.comment);
   return lines.join("\n");
 }
@@ -1635,6 +1760,7 @@ function telegramGroupOrderMessage(order) {
     lines.push(`${index + 1}. ${item.name}${details.length ? ` (${details.join(", ")})` : ""}`);
     lines.push(`${item.quantityLabel} — ${item.total} ₽`);
   }
+  if (order.promoCode) lines.push("", `Промокод: ${order.promoCode}`, `Сумма до скидки: ${order.subtotal} ₽`, `Скидка: −${order.discount || 0} ₽`);
   lines.push("", `ИТОГО: ${order.total} ₽`, "Контакты клиента доступны сотрудникам в админ-панели.");
   return lines.join("\n");
 }
@@ -2051,6 +2177,9 @@ function sanitizeProduct(input, fallback = {}) {
   const options = [...new Set((Array.isArray(input.options) ? input.options : fallback.options || []).map((value) => String(value || "").trim()).filter(Boolean))].slice(0, 24);
   const addonIds = [...new Set((Array.isArray(input.addonIds) ? input.addonIds : fallback.addonIds || []).map(String))].slice(0, 64);
   const modifierGroupIds = [...new Set((Array.isArray(input.modifierGroupIds) ? input.modifierGroupIds : fallback.modifierGroupIds || []).map(String))].slice(0, 32);
+  const categoryId = String(input.categoryId || fallback.categoryId || "shashlik");
+  const components = (Array.isArray(input.components) ? input.components : fallback.components || []).map((item) => ({ productId: String(item.productId || ""), quantity: Number(item.quantity) }));
+  if (categoryId === "combo" && (!components.length || components.length > 30 || components.some((item) => !item.productId || !Number.isFinite(item.quantity) || item.quantity <= 0))) throw new Error("Укажите корректный состав сета");
   return {
     id: input.id || fallback.id || crypto.randomUUID(),
     slug: input.slug || fallback.slug || String(input.name || "product").toLowerCase().replace(/\s+/g, "-"),
@@ -2059,7 +2188,8 @@ function sanitizeProduct(input, fallback = {}) {
     price,
     unit: String(input.unit || fallback.unit || "1 шт").trim(),
     step,
-    categoryId: String(input.categoryId || fallback.categoryId || "shashlik"),
+    categoryId,
+    components: categoryId === "combo" ? components : [],
     imageUrl: normalizedImages[0] || "/assets/placeholder.svg",
     images: normalizedImages.length ? normalizedImages : ["/assets/placeholder.svg"],
     isActive: Boolean(input.isActive ?? fallback.isActive ?? true),
@@ -2073,6 +2203,15 @@ function sanitizeProduct(input, fallback = {}) {
     freeOnionEnabled: Boolean(input.freeOnionEnabled ?? fallback.freeOnionEnabled ?? false),
     sortOrder: Number(input.sortOrder ?? fallback.sortOrder ?? 999)
   };
+}
+
+function validateSetComponents(store, product) {
+  if (product.categoryId !== "combo") return;
+  for (const component of product.components) {
+    const included = store.products.find((item) => item.id === component.productId && item.categoryId !== "combo");
+    if (!included) throw new Error("Выбран несуществующий товар в составе сета");
+    if (component.quantity / Math.max(1, Number(included.step || 1)) % 1 !== 0) throw new Error(`Некорректное количество товара «${included.name}» в сете`);
+  }
 }
 
 function sanitizeModifierGroup(input, fallback = {}) {
@@ -2168,6 +2307,17 @@ async function api(req, res, url) {
     return send(res, 200, publicStore(store));
   }
 
+  if (req.method === "POST" && url.pathname === "/api/promotions/quote") {
+    if (!enforceRateLimit(req, res, "promotion-quote", 40, 60_000)) return;
+    try {
+      const payload = await readJson(req);
+      const result = calculateOrder(store, payload);
+      return send(res, 200, { code: result.promotion?.code || "", discount: result.discount, subtotal: result.subtotal, deliveryPrice: result.deliveryPrice, total: result.total });
+    } catch (error) {
+      return send(res, 400, { error: error.message || "Промокод не применён" });
+    }
+  }
+
   if (req.method === "POST" && url.pathname === "/api/analytics") {
     if (!enforceRateLimit(req, res, "analytics", 180, 60_000)) return;
     try {
@@ -2230,9 +2380,24 @@ async function api(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/orders") {
-    if (!enforceRateLimit(req, res, "checkout", 12, 10 * 60_000)) return;
+    const idempotencyKey = String(req.headers["idempotency-key"] || "").trim();
+    if (idempotencyKey && !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return send(res, 400, { error: "Некорректный ключ заказа", code: "invalid_idempotency_key" });
+    }
+    if (!idempotencyKey && !enforceRateLimit(req, res, "checkout", 12, 10 * 60_000)) return;
     try {
       const payload = await readJson(req);
+      const idempotency = idempotencyKey ? {
+        key: idempotencyKey,
+        hash: orderRequestHash(payload),
+        onNew() {
+          if (!enforceRateLimit(req, res, "checkout", 12, 10 * 60_000)) {
+            const error = new Error("Rate limit response sent");
+            error.code = "rate_limited_already_sent";
+            throw error;
+          }
+        }
+      } : null;
       const created = await mutateStore(async (freshStore) => {
         const calculated = calculateOrder(freshStore, payload);
         if (!calculated.items.length) throw new Error("Корзина пуста");
@@ -2271,6 +2436,9 @@ async function api(req, res, url) {
           attribution: sanitizeAttribution(payload.attribution),
           items: calculated.items,
           subtotal: calculated.subtotal,
+          promoCode: calculated.promotion?.code || "",
+          discount: calculated.discount,
+          promotionSnapshot: calculated.promotion ? { type: calculated.promotion.type, amount: calculated.promotion.amount } : null,
           deliveryPrice: calculated.deliveryPrice,
           total: calculated.total,
           paymentMethod: ["CARD_ON_DELIVERY", "TRANSFER_ON_DELIVERY", "CASH_ON_DELIVERY"].includes(payload.paymentMethod)
@@ -2292,6 +2460,7 @@ async function api(req, res, url) {
           cancelledAt: ""
         };
         freshStore.orders.unshift(order);
+        if (calculated.promotion) calculated.promotion.uses = Number(calculated.promotion.uses || 0) + 1;
         freshStore.orderStatusHistory.push({
           id: crypto.randomUUID(),
           orderId: order.id,
@@ -2311,7 +2480,9 @@ async function api(req, res, url) {
           createdAt: order.createdAt
         });
         return { order, notificationStore: freshStore };
-      });
+      }, idempotency);
+
+      if (created.replayed) return send(res, 201, created.response);
 
       try {
         const telegram = await sendOrderTelegram(created.notificationStore, created.order);
@@ -2365,6 +2536,7 @@ async function api(req, res, url) {
       logEvent("info", "checkout.order_created", { orderId: order.id, total: order.total, fulfillmentType: order.fulfillmentType });
       return send(res, 201, { order: { orderNumber: order.orderNumber, trackingToken: order.trackingToken, status: order.status } });
     } catch (error) {
+      if (error.code === "rate_limited_already_sent") return;
       logEvent("warn", "checkout.rejected", { code: error.code || "invalid_order" });
       return send(res, error.httpStatus || 400, { error: error.message || "Не удалось оформить заказ", code: error.code });
     }
@@ -2396,6 +2568,36 @@ async function api(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/admin/bootstrap") {
     return send(res, 200, adminBootstrap(store, adminUser));
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/admin/promotions") {
+    if (!ensurePermission(adminUser, res, "products.price_edit")) return;
+    try {
+      const promotion = sanitizePromotion(await readJson(req));
+      if (store.promotions.some((item) => item.code === promotion.code)) return send(res, 409, { error: "Промокод уже существует" });
+      await mutateStore(async (freshStore) => { freshStore.promotions.push(promotion); return { changed: true }; });
+      return send(res, 201, { promotion });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+
+  const promotionMatch = url.pathname.match(/^\/api\/admin\/promotions\/([^/]+)$/);
+  if (promotionMatch && (req.method === "PUT" || req.method === "DELETE")) {
+    if (!ensurePermission(adminUser, res, "products.price_edit")) return;
+    try {
+      const promotionId = decodeURIComponent(promotionMatch[1]);
+      const payload = req.method === "PUT" ? await readJson(req) : null;
+      const result = await mutateStore(async (freshStore) => {
+        const index = freshStore.promotions.findIndex((item) => item.id === promotionId);
+        if (index < 0) return { notFound: true, changed: false };
+        const next = req.method === "DELETE" ? { ...freshStore.promotions[index], isActive: false } : sanitizePromotion(payload, freshStore.promotions[index]);
+        if (freshStore.promotions.some((item, position) => position !== index && item.code === next.code)) return { duplicate: true, changed: false };
+        freshStore.promotions[index] = next;
+        return { promotion: next, changed: true };
+      });
+      if (result.notFound) return notFound(res);
+      if (result.duplicate) return send(res, 409, { error: "Промокод уже существует" });
+      return send(res, 200, { promotion: result.promotion });
+    } catch (error) { return send(res, 400, { error: error.message }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/admin/uploads") {
@@ -2558,6 +2760,7 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
       const payload = await readJson(req);
       if (Number(payload.price || 0) !== 0 && !hasPermission(adminUser, "products.price_edit")) return send(res, 403, { error: "Недостаточно прав для назначения цены" });
       const product = sanitizeProduct(payload);
+      validateSetComponents(store, product);
       if (!store.categories.some((category) => category.id === product.categoryId)) return send(res, 400, { error: "Выберите существующую категорию" });
       if (product.addonIds.some((id) => !store.addons.some((addon) => addon.id === id))) return send(res, 400, { error: "Выбрано несуществующее дополнение" });
       if (product.modifierGroupIds.some((id) => !store.modifierGroups.some((group) => group.id === id))) return send(res, 400, { error: "Выбрана несуществующая группа модификаторов" });
@@ -2592,6 +2795,7 @@ const deleteUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
           return send(res, 403, { error: "Недостаточно прав для изменения цены" });
         }
         const next = sanitizeProduct({ ...before, ...payload }, before);
+        validateSetComponents(store, next);
         if (!store.categories.some((category) => category.id === next.categoryId)) return send(res, 400, { error: "Выберите существующую категорию" });
         if (next.addonIds.some((id) => !store.addons.some((addon) => addon.id === id))) return send(res, 400, { error: "Выбрано несуществующее дополнение" });
         if (next.modifierGroupIds.some((id) => !store.modifierGroups.some((group) => group.id === id))) return send(res, 400, { error: "Выбрана несуществующая группа модификаторов" });
@@ -2998,7 +3202,15 @@ async function staticFile(req, res, url) {
     try {
       const info = await stat(resolved);
       if (!info.isFile()) continue;
-      res.writeHead(200, { "content-type": mimeTypes[path.extname(resolved)] || "application/octet-stream" });
+      const isFingerprintAsset = resolved.startsWith(path.join(distDir, "assets") + path.sep)
+        && /-[A-Za-z0-9_-]{8,}\.[^.]+$/.test(path.basename(resolved));
+      const cacheControl = isFingerprintAsset
+        ? "public, max-age=31536000, immutable"
+        : path.extname(resolved) === ".html" ? "no-cache" : "public, max-age=3600";
+      res.writeHead(200, {
+        "content-type": mimeTypes[path.extname(resolved)] || "application/octet-stream",
+        "cache-control": cacheControl
+      });
       createReadStream(resolved).pipe(res);
       return;
     } catch {
@@ -3007,7 +3219,7 @@ async function staticFile(req, res, url) {
   }
   const spa = path.join(distDir, "index.html");
   if (existsSync(spa)) {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
     createReadStream(spa).pipe(res);
     return;
   }

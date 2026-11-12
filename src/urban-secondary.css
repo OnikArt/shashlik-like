@@ -1,0 +1,118 @@
+/* Checkpoint 4: existing standalone routes, using the shared urban tokens. */
+.production-standalone, .delivery-page, .about-page, .contacts-page { background: var(--urban-paper); color: var(--urban-ink); font-family: "Geologica", system-ui, sans-serif; }
+.production-standalone :is(h1,h2,h3), .delivery-page :is(h1,h2,h3), .about-page :is(h1,h2,h3), .contacts-page :is(h1,h2,h3) { font-family: "Geologica", system-ui, sans-serif; letter-spacing: -.035em; line-height: 1.1; }
+.production-standalone :is(p,small), .delivery-page :is(p,small), .about-page :is(p,small), .contacts-page :is(p,small) { line-height: 1.55; }
+.production-standalone :is(a,button):focus-visible, .delivery-page :is(a,button):focus-visible, .about-page :is(a,button):focus-visible, .contacts-page :is(a,button):focus-visible { outline: 3px solid var(--urban-orange); outline-offset: 3px; }
+.production-standalone .production-heading :is(h1,h2), .delivery-page .delivery-copy h1, .about-page .about-copy h1, .contacts-page .contacts-intro h1 { color: var(--urban-ink) !important; font-size: clamp(2.6rem, 5vw, 5.5rem); font-weight: 650; line-height: 1.08; letter-spacing: -.045em; text-transform: none; overflow-wrap: normal; }
+.production-standalone .production-heading :is(h1,h2) strong, .delivery-page .delivery-copy h1 strong, .about-page .about-copy h1 strong, .contacts-page .contacts-intro h1 strong { color: var(--urban-orange) !important; }
+.production-standalone .production-heading > span, .production-standalone .production-heading > div > span, .delivery-page .delivery-lead, .about-page .about-lead, .contacts-page .contacts-intro > p:not(.contacts-eyebrow) { max-width: 56ch; color: var(--urban-muted) !important; font-size: clamp(1rem, 1.2vw, 1.2rem); line-height: 1.6; }
+.production-standalone .production-heading p, .delivery-page .delivery-eyebrow, .about-page .about-eyebrow, .contacts-page .contacts-eyebrow { color: #a83c20 !important; font-size: .78rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.production-standalone .button.primary, .secondary-hero-cta { min-height: 50px; border-radius: var(--urban-radius-sm); background: var(--urban-orange) !important; color: #fff !important; box-shadow: none; }
+.production-standalone .button.primary:hover, .secondary-hero-cta:hover { background: #c94825 !important; }
+.secondary-hero-cta { margin-top: 24px; width: fit-content; }
+
+/* Promotions: one verified offer, with a clear path into the catalogue. */
+.production-standalone .promotion-showcase.standalone { display: flex; align-items: center; min-height: min(680px, calc(100svh - 100px)); padding-block: clamp(72px, 9vw, 120px); background: var(--urban-cream); }
+.production-standalone .promotion-showcase.standalone::before { opacity: .08; }
+.production-standalone .promotion-showcase.standalone .promotion-inner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .62fr); align-items: center; gap: 20px clamp(32px, 5vw, 90px); max-width: 1280px; }
+.production-standalone .promotion-showcase.standalone .production-heading { grid-column: 1; grid-row: 1 / span 3; max-width: 850px; margin-bottom: 0; }
+.production-standalone .promotion-showcase.standalone .production-heading h1 { max-width: 14ch; }
+.production-standalone .promotion-showcase.standalone .promotion-code-feature { grid-column: 2; grid-row: 1; width: 100%; justify-content: space-between; margin: 0; padding: clamp(22px, 3vw, 42px); }
+.production-standalone .promotion-showcase.standalone .button.primary { grid-column: 2; grid-row: 2; justify-self: stretch; }
+.production-standalone .promotion-showcase.standalone .promotion-note { grid-column: 2; grid-row: 3; margin: 0; }
+.promotion-note { max-width: 55ch; margin: 20px 0 0; color: var(--urban-muted); font-size: .84rem; }
+.promotion-code-feature { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 28px; width: fit-content; max-width: 100%; margin: 0 0 24px; padding: 16px 24px; border: 1px solid var(--urban-orange); border-radius: var(--urban-radius-md); background: #fff; color: var(--urban-ink); }
+.promotion-code-feature > strong { color: var(--urban-orange); font-size: clamp(2.5rem, 5vw, 4.5rem); font-weight: 700; line-height: 1; }
+.promotion-code-feature > span { font-size: 1rem; line-height: 1.4; }
+.promotion-code-feature b { display: block; color: var(--urban-ink); font-size: clamp(1.25rem, 2vw, 1.75rem); letter-spacing: .12em; }
+
+/* Kiosks and favorites use the catalogue's light cards and action pattern. */
+.production-standalone .kiosk-showcase.standalone { min-height: 0; padding-block: clamp(54px, 6vw, 100px); background: var(--urban-paper); }
+.production-standalone .kiosk-showcase.standalone .production-heading { align-items: end; gap: 24px; margin-bottom: 34px; }
+.production-standalone .kiosk-showcase.standalone .kiosk-menu-link { flex: none; }
+.production-standalone .kiosk-card { border: 1px solid var(--urban-line); border-radius: var(--urban-radius-md); background: white; }
+.production-standalone .kiosk-card-copy { background: white; color: var(--urban-ink); }
+.production-standalone .kiosk-card-copy h3 { color: var(--urban-ink); font-size: clamp(1.55rem, 2.4vw, 2.4rem); line-height: 1.14; }
+.production-standalone .kiosk-card-copy p, .production-standalone .kiosk-route { color: var(--urban-muted); }
+.production-standalone .kiosk-card-copy > a { min-height: 48px; border-radius: var(--urban-radius-sm); background: var(--urban-orange); color: white; }
+.production-standalone .favorites-page { min-height: calc(100svh - 100px); padding-block: clamp(54px, 6vw, 100px); }
+.production-standalone .favorites-grid { gap: 18px; }
+.production-standalone .favorites-grid .home-product-card { border: 1px solid var(--urban-line); border-radius: var(--urban-radius-md); background: white; box-shadow: none; }
+.production-standalone .favorites-menu-link { margin-top: 30px; }
+.production-standalone .production-empty { border: 1px solid var(--urban-line); border-radius: var(--urban-radius-md); background: var(--urban-cream); color: var(--urban-ink); }
+.production-standalone .production-empty :is(h2,h3) { color: var(--urban-ink); }
+.production-standalone .production-empty p { color: var(--urban-muted); }
+
+/* Editorial cream introduction with photography in a contained right column. */
+.delivery-page .delivery-cinematic, .about-page .about-cinematic, .contacts-page .contacts-hero { min-height: 0; padding-top: 0; overflow: visible; background: var(--urban-cream) !important; }
+.delivery-page .delivery-cinematic::before, .about-page .about-cinematic::before, .contacts-page .contacts-hero::before { display: none; }
+.delivery-page .delivery-cinematic-media, .about-page .about-cinematic-media, .contacts-page .contacts-hero-media { position: absolute; top: clamp(40px, 5vw, 72px); right: max(24px, calc((100vw - 1280px)/2)); bottom: auto; left: auto; width: min(39vw, 510px); height: clamp(340px, 36vw, 490px); overflow: hidden; border-radius: var(--urban-radius-md); }
+.delivery-page .delivery-cinematic-media::after, .about-page .about-cinematic-media::after, .contacts-page .contacts-hero-media::after { display: none; }
+.delivery-page .delivery-cinematic-media img, .about-page .about-cinematic-media img, .contacts-page .contacts-hero-media img { width: 100%; height: 100%; object-fit: cover; transform: none; }
+.delivery-page .delivery-cinematic:hover .delivery-cinematic-media img, .about-page .about-cinematic:hover .about-cinematic-media img, .contacts-page .contacts-hero:hover .contacts-hero-media img { transform: none; }
+.delivery-page .delivery-cinematic-inner, .about-page .about-hero-inner, .contacts-page .contacts-hero-inner { min-height: 0; padding-block: clamp(68px, 7vw, 105px) clamp(48px, 6vw, 88px); }
+.delivery-page .delivery-copy, .about-page .about-copy, .contacts-page .contacts-intro { max-width: min(53%, 650px); }
+.delivery-page .delivery-handwrite, .about-page .about-handwrite, .contacts-page .contacts-handwrite { display: none; }
+.delivery-page .delivery-info-grid { max-width: none; margin-top: clamp(100px, 11vw, 160px); }
+.delivery-page .delivery-info-grid article, .contacts-page .contacts-actions a, .contacts-page .contacts-delivery-grid article, .about-page .about-promises { border: 1px solid var(--urban-line) !important; border-radius: var(--urban-radius-md); background: white !important; box-shadow: none; backdrop-filter: none; }
+.delivery-page .delivery-info-grid :is(h2,strong), .contacts-page .contacts-actions strong, .contacts-page .contacts-delivery-grid :is(h2,strong), .about-page .about-promises strong { color: var(--urban-ink) !important; }
+.delivery-page .delivery-info-grid p, .contacts-page .contacts-actions small, .contacts-page .contacts-delivery-grid p, .about-page .about-promises small { color: var(--urban-muted) !important; }
+.delivery-page .delivery-services { border-color: var(--urban-line); border-radius: var(--urban-radius-md); background: white; }
+.delivery-page .delivery-kiosks { background: var(--urban-paper); }
+.delivery-page .delivery-kiosks-head :is(h2,h3), .delivery-page .delivery-kiosk-body h3 { color: var(--urban-ink); }
+.delivery-page .delivery-kiosks-head span, .delivery-page .delivery-kiosk-body p { color: var(--urban-muted); }
+.delivery-page .delivery-kiosk-card { border-color: var(--urban-line); border-radius: var(--urban-radius-md); background: white; }
+
+.about-page .about-content { min-height: 0; padding-bottom: 60px; background: var(--urban-paper); }
+.about-page .about-cinematic { overflow: visible; }
+.about-page .about-promises { position: relative; bottom: auto; left: auto; max-width: none; width: 100%; margin-top: clamp(100px, 11vw, 160px); }
+.about-page .about-promises > div { border-color: var(--urban-line); }
+.about-page .about-values { gap: 18px; padding-block: 56px; }
+.about-page .about-value-card { border: 1px solid var(--urban-line); border-radius: var(--urban-radius-md); background: white; box-shadow: none; }
+.about-page .about-value-card::after { display: none; }
+.about-page .about-value-card > div { inset: auto; width: 100%; padding: 62px 22px 24px; }
+.about-page .about-value-number { position: absolute; top: 20px; left: 22px; color: var(--urban-orange); font-size: 1rem; font-weight: 700; letter-spacing: .08em; }
+.about-page .about-value-icon svg { width: 30px; height: 30px; }
+.about-page .about-value-card h2 { color: var(--urban-ink); }
+.about-page .about-value-card p { color: var(--urban-muted); }
+.about-page .about-brand-photo { margin-top: 0; }
+.about-page .about-photo-frame { background: #080808; box-shadow: none; }
+.about-page .about-photo-frame .about-official-logo { width: 100%; aspect-ratio: 1.42; height: auto; object-fit: contain; filter: none; }
+.about-page .about-photo-frame::after { display: none; }
+.kiosk-image-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; min-height: 180px; padding: 24px; background: var(--urban-cream); color: var(--urban-muted); text-align: center; }
+.kiosk-image-placeholder svg { width: 44px; height: 44px; color: var(--urban-orange); stroke-width: 1.5; }
+.kiosk-image-placeholder span { font-size: .85rem; line-height: 1.4; }
+
+.contacts-page .contacts-intro h1 { white-space: normal; }
+.contacts-page .contacts-actions { max-width: 650px; margin-top: clamp(55px, 7vw, 90px); }
+.contacts-page .contacts-actions a { min-width: 0; text-decoration: none; }
+.contacts-page .contacts-actions a strong { overflow-wrap: anywhere; }
+.contacts-page .contacts-logistics { background: var(--urban-paper); }
+.contacts-page .contacts-kiosks { background: var(--urban-cream) !important; }
+.contacts-page .contacts-kiosk-card { border: 1px solid var(--urban-line); border-radius: var(--urban-radius-md); background: white; }
+
+@media (max-width: 900px) {
+  .production-standalone .promotion-showcase.standalone .promotion-inner { display: block; }
+  .production-standalone .promotion-showcase.standalone .production-heading { margin-bottom: 28px; }
+  .production-standalone .promotion-showcase.standalone .promotion-code-feature { width: fit-content; margin-bottom: 24px; padding: 16px 24px; }
+  .production-standalone .promotion-showcase.standalone .promotion-note { margin-top: 20px; }
+  .delivery-page .delivery-cinematic-media, .about-page .about-cinematic-media, .contacts-page .contacts-hero-media { position: relative; inset: auto; width: min(100% - 32px, 720px); height: clamp(250px, 48vw, 400px); margin: 28px auto 0; }
+  .delivery-page .delivery-cinematic-inner, .about-page .about-hero-inner, .contacts-page .contacts-hero-inner { padding-block: 48px; }
+  .delivery-page .delivery-copy, .about-page .about-copy, .contacts-page .contacts-intro { max-width: 680px; }
+  .delivery-page .delivery-info-grid, .about-page .about-promises, .contacts-page .contacts-actions { margin-top: 32px; }
+}
+@media (max-width: 760px) {
+  .production-standalone .promotion-showcase.standalone { min-height: 0; padding-block: 68px; }
+  .production-standalone .kiosk-showcase.standalone .production-heading { align-items: start; }
+  .production-standalone .favorites-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .delivery-page .delivery-info-grid, .contacts-page .contacts-actions, .contacts-page .contacts-delivery-grid { grid-template-columns: 1fr; }
+  .about-page .about-promises { grid-template-columns: 1fr; padding: 8px 18px; }
+  .about-page .about-promises > div { border-right: 0; border-bottom: 1px solid var(--urban-line); }
+  .about-page .about-promises > div:last-child { border-bottom: 0; }
+  .contacts-page .contacts-actions a { min-height: 72px; }
+}
+@media (max-width: 430px) {
+  .production-standalone .favorites-grid { grid-template-columns: 1fr; }
+  .delivery-page .delivery-cinematic-media, .about-page .about-cinematic-media, .contacts-page .contacts-hero-media { width: calc(100% - 28px); }
+  .production-standalone .production-heading :is(h1,h2), .delivery-page .delivery-copy h1, .about-page .about-copy h1, .contacts-page .contacts-intro h1 { font-size: clamp(2.35rem, 10vw, 3.2rem); }
+}

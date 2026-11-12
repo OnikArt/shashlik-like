@@ -1,8 +1,10 @@
 import {
   CSSProperties,
+  createContext,
   FormEvent,
   ReactNode,
   useEffect,
+  useContext,
   useMemo,
   useRef,
   useState,
@@ -45,6 +47,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Snowflake,
   Send,
   ShieldCheck,
   ShoppingBag,
@@ -59,6 +62,15 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch, apiUrl } from "./api";
+import { BrandLogo } from "./components/BrandLogo";
+import { UrbanButton } from "./components/UrbanControls";
+
+const WinterContext = createContext({ enabled: false, toggle: () => {} });
+
+function WinterToggle() {
+  const { enabled, toggle } = useContext(WinterContext);
+  return <button type="button" className={`winter-toggle${enabled ? " is-on" : ""}`} onClick={toggle} aria-pressed={enabled} aria-label={enabled ? "Выключить зимний режим" : "Включить зимний режим"} title={enabled ? "Выключить зимний режим" : "Включить зимний режим"}><Snowflake size={20} aria-hidden="true" /></button>;
+}
 
 type Category = {
   id: string;
@@ -90,6 +102,7 @@ type Product = {
   unit: string;
   step: number;
   categoryId: string;
+  components?: Array<{ productId: string; quantity: number }>;
   imageUrl: string;
   images?: string[];
   isActive: boolean;
@@ -141,6 +154,7 @@ type Settings = {
 };
 type Bootstrap = {
   categories: Category[];
+  promotions?: Array<{ code: string; type: "percent" | "fixed"; amount: number }>;
   products: Product[];
   addons: Addon[];
   modifierGroups: ModifierGroup[];
@@ -204,7 +218,8 @@ type OrderHistoryEntry = {
   changedByUserId: string | null;
   source: string;
 };
-type AdminBootstrap = Bootstrap & {
+type AdminBootstrap = Omit<Bootstrap, "promotions"> & {
+  promotions: Array<{ id: string; code: string; type: "percent" | "fixed"; amount: number; startsAt: string; endsAt: string; isActive: boolean; uses: number }>;
   orders: Order[];
   orderStatusHistory: OrderHistoryEntry[];
   orderStatuses: OrderStatus[];
@@ -254,6 +269,8 @@ type Order = {
     onionChoice?: string;
   }>;
   subtotal: number;
+  promoCode?: string;
+  discount?: number;
   deliveryPrice: number;
   total: number;
   status: OrderStatus;
@@ -301,6 +318,8 @@ type TrackingOrder = {
     total: number;
   }>;
   subtotal: number;
+  promoCode?: string;
+  discount?: number;
   deliveryPrice: number;
   total: number;
   pickupPointName: string;
@@ -610,6 +629,14 @@ function useActiveOrder(enabled = true) {
 }
 
 function useCart(data: Bootstrap | null) {
+  const [promoCode, setPromoCode] = useState(() => sessionStorage.getItem("shashlik-promo") || "");
+  const [promoQuote, setPromoQuote] = useState<{ code: string; discount: number; total: number } | null>(null);
+  const [promoError, setPromoError] = useState("");
+  useEffect(() => {
+    const syncPromo = () => setPromoCode(sessionStorage.getItem("shashlik-promo") || "");
+    window.addEventListener("shashlik-promo-change", syncPromo);
+    return () => window.removeEventListener("shashlik-promo-change", syncPromo);
+  }, []);
   const [items, setItems] = useState<CartItem[]>(() => {
     try {
       const stored = JSON.parse(
@@ -694,6 +721,29 @@ function useCart(data: Bootstrap | null) {
       ? settings.deliveryPrice
       : 0;
   const total = subtotal + deliveryPrice;
+  useEffect(() => {
+    if (!promoCode || !items.length || !data) { setPromoQuote(null); return; }
+    setPromoQuote(null);
+    setPromoError("");
+    let cancelled = false;
+    const controller = new AbortController();
+    apiFetch("/api/promotions/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promoCode, deliveryType: "delivery", items }), signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json();
+        if (cancelled) return;
+        if (response.ok) { setPromoQuote(result); setPromoError(""); }
+        else { setPromoQuote(null); setPromoError(result.error || "Промокод не применён"); }
+      })
+      .catch(() => { if (!cancelled) { setPromoQuote(null); setPromoError("Не удалось проверить промокод. Повторите позже."); } });
+    return () => { cancelled = true; controller.abort(); };
+  }, [promoCode, items, data]);
+  function applyPromoCode(code: string) {
+    const normalized = code.trim().toLocaleUpperCase("ru-RU");
+    sessionStorage.setItem("shashlik-promo", normalized);
+    setPromoQuote(null);
+    setPromoError("");
+    setPromoCode(normalized);
+  }
   const count = detailed.reduce(
     (sum, item) => sum + quantityUnits(item.product, item.quantity),
     0,
@@ -772,6 +822,10 @@ function useCart(data: Bootstrap | null) {
     subtotal,
     deliveryPrice,
     total,
+    promoCode,
+    promoQuote,
+    promoError,
+    applyPromoCode,
     count,
     add,
     update,
@@ -826,11 +880,13 @@ function useFavorites() {
 }
 
 function App() {
+  const [winterEnabled, setWinterEnabled] = useState(() => localStorage.getItem("winter-mode") === "on");
   const { data, error, reload } = useBootstrap();
   const cart = useCart(data);
   const location = useLocation();
   const navigationType = useNavigationType();
   const initialNavigation = useRef(true);
+  const previousPathname = useRef<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -867,12 +923,20 @@ function App() {
   }, [activeTheme, themeMode]);
 
   useEffect(() => {
+    document.documentElement.dataset.winter = winterEnabled ? "on" : "off";
+    localStorage.setItem("winter-mode", winterEnabled ? "on" : "off");
+  }, [winterEnabled]);
+
+  useEffect(() => {
     captureAttribution();
     trackEvent("page_view");
     if (location.pathname === "/menu") trackEvent("menu_view");
   }, [location.pathname]);
 
   useEffect(() => {
+    const pathnameChanged = previousPathname.current !== location.pathname;
+    previousPathname.current = location.pathname;
+    if (!pathnameChanged) return;
     const navigationEntry = performance.getEntriesByType("navigation")[0] as
       PerformanceNavigationTiming | undefined;
     const shouldScroll =
@@ -948,7 +1012,7 @@ function App() {
     return <SystemState title="ШАШЛЫК ЛАЙК" text="Загружаем меню..." />;
 
   return (
-    <>
+    <WinterContext.Provider value={{ enabled: winterEnabled, toggle: () => setWinterEnabled((value) => !value) }}>
       {!isAdmin && !usesHomeDesign && (
         <Header
           settings={data.settings}
@@ -965,7 +1029,7 @@ function App() {
           <Route
             path="/"
             element={
-              <Home
+              <HomeReboot
                 data={data}
                 onAdd={addToCart}
                 cartCount={cart.count}
@@ -1180,7 +1244,7 @@ function App() {
           <Link to="/cart">Перейти в корзину</Link>
         </div>
       )}
-    </>
+    </WinterContext.Provider>
   );
 }
 
@@ -1199,11 +1263,11 @@ function useRouteMetadata(pathname: string, data: Bootstrap | null) {
       ],
       "/menu": [
         "Меню и цены | Шашлык Лайк",
-        "Актуальное меню Шашлык Лайк: шашлык, шаурма, люля-кебаб, соусы, хлеб и напитки.",
+        "Актуальное меню Шашлык Лайк: шашлык, шаурма, донер, люля-кебаб, фахитос, соусы и сеты.",
       ],
       "/delivery": [
         "Доставка шашлыка по Воронежу | Шашлык Лайк",
-        "Условия и стоимость доставки горячих блюд Шашлык Лайк по Воронежу.",
+        "Условия и стоимость доставки горячих блюд Шашлык Лайк по правому берегу Воронежа.",
       ],
       "/pickup": [
         "Самовывоз | Шашлык Лайк",
@@ -1512,6 +1576,7 @@ function Header({
         activeTheme={activeTheme}
         onChange={onThemeMode}
       />
+      <WinterToggle />
       <Link
         className="admin-icon-link"
         to="/admin"
@@ -1618,6 +1683,37 @@ type HomeProps = {
 
 const homePrimaryPhone = "+7 (909) 211-82-11";
 const phoneHref = (value: string) => `tel:${value.replace(/[^+\d]/g, "")}`;
+
+function HomeReboot({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: HomeProps) {
+  const { favorites, toggleFavorite } = useFavorites();
+  const [category, setCategory] = useState("all");
+  const categories = data.categories.filter((item) => item.isActive !== false && data.products.some((product) => product.isActive && product.categoryId === item.id));
+  const products = data.products.filter((product) => product.isActive && (category === "all" ? product.isFeatured : product.categoryId === category)).slice(0, 6);
+  const firstPoint = data.pickupPoints.find((point) => point.isActive);
+  const sitePromo = data.promotions?.find((promotion) => promotion.code === "САЙТ" && promotion.type === "percent" && promotion.amount === 10);
+  const navigate = useNavigate();
+  return <div className="urban-home">
+    <HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activeOrder={activeOrder} />
+    <main>
+      <section className="urban-hero" aria-labelledby="urban-home-title">
+        <div className="urban-hero-copy">
+          <p className="urban-eyebrow"><span /> Воронеж · вкус на углях</p>
+          <h1 id="urban-home-title">Шашлык,<br /><em>который любят.</em></h1>
+          <p className="urban-hero-lead">Сочные блюда с огня для вашего обеда, ужина и встреч с близкими.</p>
+          <div className="urban-hero-actions"><Link className="urban-link-button urban-link-button--primary" to="/menu">Смотреть меню <ArrowRight size={20} aria-hidden="true" /></Link><Link className="urban-link-button urban-link-button--secondary" to="/delivery">Условия доставки</Link></div>
+          <div className="urban-hero-footnote"><span>01 / 03</span><span>Готовим на углях · доставляем по Воронежу</span></div>
+        </div>
+        <div className="urban-hero-visual"><img src="/assets/home-hero-cinematic.webp" alt="Шашлык на шампуре, приготовленный на углях" width="1792" height="1024" fetchPriority="high" /><span>Настоящий вкус рядом</span></div>
+      </section>
+      <section className="urban-section urban-categories" aria-labelledby="urban-categories-title"><div className="urban-heading"><div><p className="urban-eyebrow">Что приготовить сегодня</p><h2 id="urban-categories-title">Выберите по вкусу</h2></div><Link to="/menu">Всё меню <ArrowRight size={18} /></Link></div><div className="urban-category-grid">{categories.slice(0, 6).map((item, index) => { const product = data.products.find((entry) => entry.isActive && entry.categoryId === item.id && entry.imageUrl); return <Link key={item.id} to={`/menu?category=${encodeURIComponent(item.id)}`} className="urban-category"><span className="urban-category-index">0{index + 1}</span><strong>{item.name}</strong>{product && <img src={product.imageUrl} alt="" loading="lazy" decoding="async" />}<ArrowRight size={19} aria-hidden="true" /></Link>; })}</div></section>
+      <section className="urban-section urban-favorites" aria-labelledby="urban-favorites-title"><div className="urban-heading"><div><p className="urban-eyebrow">Выбор гостей</p><h2 id="urban-favorites-title">Популярные блюда</h2></div><Link to="/menu">Перейти в каталог <ArrowRight size={18} /></Link></div><div className="urban-filter" role="group" aria-label="Категории блюд"><UrbanButton tone={category === "all" ? "primary" : "quiet"} onClick={() => setCategory("all")} aria-pressed={category === "all"}>Все</UrbanButton>{categories.slice(0, 5).map((item) => <UrbanButton key={item.id} tone={category === item.id ? "primary" : "quiet"} onClick={() => setCategory(item.id)} aria-pressed={category === item.id}>{item.name}</UrbanButton>)}</div><div className="urban-product-grid">{products.length ? products.map((product) => <article className="urban-product" key={product.id}><Link to={`/product/${product.slug}`} className="urban-product-image"><img src={product.imageUrl} alt={product.name} loading="lazy" decoding="async" /></Link><button type="button" className="urban-product-favorite" aria-label={`${favorites.includes(product.id) ? "Убрать" : "Добавить"} ${product.name} ${favorites.includes(product.id) ? "из" : "в"} избранное`} aria-pressed={favorites.includes(product.id)} onClick={() => toggleFavorite(product.id)}><Heart size={19} fill={favorites.includes(product.id) ? "currentColor" : "none"} /></button><div className="urban-product-info"><Link to={`/product/${product.slug}`}><h3>{product.name}</h3></Link><p>{product.description}</p><div><span><strong>{money(product.price)}</strong><small>{product.unit}</small></span>{product.options?.length || product.addonIds?.length ? <Link className="urban-product-add" to={`/product/${product.slug}`} aria-label={`Выбрать ${product.name}`}><Plus size={20} /></Link> : <button type="button" className="urban-product-add" disabled={!product.isAvailable} onClick={() => onAdd(product, product.step || 1)} aria-label={`Добавить ${product.name} в корзину`}><Plus size={20} /></button>}</div></div></article>) : <p className="urban-empty">В этой категории пока нет блюд. Посмотрите весь каталог.</p>}</div></section>
+      <section className="urban-section urban-service" aria-labelledby="urban-service-title"><div className="urban-service-intro"><p className="urban-eyebrow">Как вам удобно</p><h2 id="urban-service-title">Ваш заказ.<br />Ваши правила.</h2><p>Заберите блюда в киоске или оформите доставку. Условия и стоимость указаны до подтверждения заказа.</p></div><div className="urban-service-options"><Link to="/delivery"><span>01</span><Bike size={27} /><h3>Доставка</h3><p>Любимые блюда привезём по Воронежу.</p><ArrowRight size={20} /></Link><Link to="/pickup"><span>02</span><Store size={27} /><h3>Самовывоз</h3><p>{firstPoint ? `Заберите заказ: ${firstPoint.address}.` : "Выберите удобный киоск."}</p><ArrowRight size={20} /></Link></div></section>
+      {sitePromo && <section className="urban-promo" aria-labelledby="urban-promo-title"><div><p className="urban-eyebrow">Предложение на сайте</p><h2 id="urban-promo-title">Вкуснее вместе<br />со скидкой 10%</h2><p>Используйте промокод «САЙТ» при оформлении заказа.</p><UrbanButton onClick={() => { sessionStorage.setItem("shashlik-promo", "САЙТ"); window.dispatchEvent(new Event("shashlik-promo-change")); navigate("/menu"); }}>Выбрать блюда <ArrowRight size={18} /></UrbanButton></div><img src="/assets/shashlik-hero-optimized.jpg" alt="Шашлык на шампурах" loading="lazy" decoding="async" /></section>}
+      <section className="urban-section urban-locations" aria-labelledby="urban-locations-title"><div className="urban-locations-image"><img src="/assets/home-kiosk-evening.webp" alt="Киоск Шашлык Лайк вечером" loading="lazy" decoding="async" /></div><div><p className="urban-eyebrow">Рядом с вами</p><h2 id="urban-locations-title">Заходите<br />за вкусным.</h2><p>{firstPoint ? `${firstPoint.address} — одна из наших точек в Воронеже.` : "Найдите удобный киоск в Воронеже."}</p><Link className="urban-link-button urban-link-button--secondary" to="/pickup">Посмотреть киоски <ArrowRight size={18} /></Link></div></section>
+      <section className="urban-section urban-story" aria-labelledby="urban-story-title"><p className="urban-eyebrow">О нас</p><h2 id="urban-story-title">Две сети.<br /><em>Одна любовь к вкусу.</em></h2><p>Шашлык Лайк × ШашлычОК — блюда на углях, знакомые вкусы и удобный способ заказать их рядом с вами.</p><Link to="/about">Узнать о нас <ArrowRight size={18} /></Link></section>
+    </main><HomeFooter settings={data.settings} />
+  </div>;
+}
 
 function Home({
   data,
@@ -1972,6 +2068,24 @@ function HomeHeader({
   const location = useLocation();
   const { favorites } = useFavorites();
   const secondaryPhone = formatRussianPhone(settings.phone);
+  const [phonesOpen, setPhonesOpen] = useState(false);
+  const phonePopoverRef = useRef<HTMLDivElement>(null);
+  const phoneButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!phonesOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setPhonesOpen(false); phoneButtonRef.current?.focus(); }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!phonePopoverRef.current?.contains(event.target as Node)) setPhonesOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [phonesOpen]);
   const navigation = [
     ["Меню", "/menu"],
     ["Акции", "/promotions"],
@@ -1982,25 +2096,17 @@ function HomeHeader({
   ];
   return (
     <>
-      <header className="home-header">
-        <div className="home-header-inner home-container">
+      <header className="urban-header">
+        <div className="urban-header-inner">
           <Link
-            className="home-brand"
+            className="urban-brand"
             to="/"
             aria-label="Шашлык Лайк и ШашлычОК, главная"
           >
-            <span className="home-brand-mark">
-              <Flame />
-            </span>
-            <span>
-              <strong>
-                ШАШЛЫК <i>ЛАЙК</i> <b>×</b> ШАШЛЫЧ<i>ОК</i>
-              </strong>
-              <small>Воронеж · настоящий вкус на углях</small>
-            </span>
+            <BrandLogo />
           </Link>
           <nav
-            className={open ? "home-nav open" : "home-nav"}
+            className={open ? "urban-nav open" : "urban-nav"}
             aria-label="Навигация по сайту"
           >
             {navigation.map(([label, href]) => (
@@ -2013,23 +2119,20 @@ function HomeHeader({
                 {label}
               </Link>
             ))}
-            <div className="home-nav-mobile-phones">
+            <div className="urban-nav-mobile-phones">
               <a href={phoneHref(homePrimaryPhone)}>{homePrimaryPhone}</a>
               <a href={phoneHref(secondaryPhone)}>{secondaryPhone}</a>
             </div>
+            <div className="urban-nav-winter"><WinterToggle /><span>Зимний режим</span></div>
           </nav>
-          <div className="home-header-actions">
-            <a className="home-phone" href={phoneHref(homePrimaryPhone)}>
-              <Phone /> <span>{homePrimaryPhone}</span>
-            </a>
-            <a
-              className="home-phone secondary"
-              href={phoneHref(secondaryPhone)}
-            >
-              <Phone /> <span>{secondaryPhone}</span>
-            </a>
+          <div className="urban-header-actions">
+            <span className="urban-desktop-winter"><WinterToggle /></span>
+            <div className="urban-phone-menu" ref={phonePopoverRef}>
+              <button type="button" ref={phoneButtonRef} className="urban-icon-button" aria-label="Показать телефоны для звонка" aria-haspopup="true" aria-expanded={phonesOpen} onClick={() => setPhonesOpen((value) => !value)}><Phone size={20} aria-hidden="true" /></button>
+              {phonesOpen && <div className="urban-phone-popover" role="group" aria-label="Телефоны для звонка"><a href={phoneHref(homePrimaryPhone)} onClick={() => setPhonesOpen(false)}>{homePrimaryPhone}</a><a href={phoneHref(secondaryPhone)} onClick={() => setPhonesOpen(false)}>{secondaryPhone}</a></div>}
+            </div>
             <Link
-              className="home-favorites-button"
+              className="urban-icon-button urban-favorites-button"
               to="/favorites"
               aria-label={`Открыть избранное, товаров ${favorites.length}`}
             >
@@ -2037,7 +2140,7 @@ function HomeHeader({
               {favorites.length > 0 && <b>{favorites.length}</b>}
             </Link>
             <button
-              className="home-cart-button"
+              className="urban-cart-button"
               onClick={onCartOpen}
               aria-label={`Открыть корзину, товаров ${cartCount}`}
             >
@@ -2046,7 +2149,7 @@ function HomeHeader({
               <span>{cartTotal > 0 ? money(cartTotal) : "Корзина"}</span>
             </button>
             <button
-              className="home-menu-button"
+              className="urban-icon-button urban-menu-button"
               onClick={() => setOpen((value) => !value)}
               aria-expanded={open}
               aria-label={open ? "Закрыть меню" : "Открыть меню"}
@@ -2216,127 +2319,19 @@ function PromotionsShowcase({
   data: Bootstrap;
   standalone?: boolean;
 }) {
-  const candidates = data.products
-    .filter((product) => product.isActive && product.isAvailable)
-    .sort(
-      (a, b) =>
-        Number(b.isFeatured) - Number(a.isFeatured) ||
-        a.sortOrder - b.sortOrder,
-    )
-    .slice(0, 4);
-  const [active, setActive] = useState(0);
-  const touchStart = useRef(0);
-  const select = (index: number) =>
-    setActive(Math.max(0, Math.min(index, candidates.length - 1)));
-  const Heading = standalone ? "h1" : "h2";
+  const sitePromo = data.promotions?.find((promotion) => promotion.code === "САЙТ" && promotion.type === "percent" && promotion.amount === 10);
+  const navigate = useNavigate();
   return (
-    <section
-      className={`production-section promotion-showcase${standalone ? " standalone" : ""}`}
-      id="promotions"
-      aria-labelledby={
-        standalone ? "promotions-page-title" : "promotions-title"
-      }
-    >
+    <section className={`production-section promotion-showcase${standalone ? " standalone" : ""}`} id="promotions" aria-labelledby={standalone ? "promotions-page-title" : "promotions-title"}>
       <div className="home-container promotion-inner">
         <div className="production-heading">
           <p>● &nbsp; АКЦИИ</p>
-          <Heading
-            id={standalone ? "promotions-page-title" : "promotions-title"}
-          >
-            {standalone ? <>Акции и <strong>предложения</strong></> : <>Вкусные <strong>предложения</strong></>}
-          </Heading>
-          <span>
-            Только подтверждённые цены из актуального меню. Новые акции появятся
-            здесь после публикации.
-          </span>
+          {standalone ? <h1 id="promotions-page-title">Скидка 10% на заказ через сайт</h1> : <h2 id="promotions-title">Скидка 10% на заказ через сайт</h2>}
+          <span>Заказывайте любимые блюда на нашем сайте и получайте скидку 10% по промокоду САЙТ.</span>
         </div>
-        {candidates.length ? (
-          <>
-            <div
-              className="promotion-carousel"
-              onTouchStart={(event) => {
-                touchStart.current = event.touches[0]?.clientX || 0;
-              }}
-              onTouchEnd={(event) => {
-                const delta =
-                  (event.changedTouches[0]?.clientX || 0) - touchStart.current;
-                if (Math.abs(delta) > 42) select(active + (delta < 0 ? 1 : -1));
-              }}
-            >
-              <div
-                className="promotion-track"
-                style={{ "--promo-index": active } as CSSProperties}
-              >
-                {candidates.map((product, index) => (
-                  <Link
-                    to={`/product/${product.slug}`}
-                    className={`promotion-card${index === active ? " active" : ""}${index === 0 ? " featured" : ""}`}
-                    key={product.id}
-                    onClick={() => setActive(index)}
-                  >
-                    <img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      width="720"
-                      height="900"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <span className="promotion-badge">
-                      {product.badge ||
-                        (product.isFeatured ? "ПОПУЛЯРНОЕ" : "В МЕНЮ")}
-                    </span>
-                    <div>
-                      <span className="promotion-kicker">Специальное предложение</span>
-                      <h3>{product.name}</h3>
-                      <p>{product.description}</p>
-                      <footer>
-                        <span><strong>{money(product.price)}</strong><small>{product.unit}</small></span>
-                        <b>Подробнее <ArrowRight /></b>
-                      </footer>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="production-arrow previous"
-                onClick={() => select(active - 1)}
-                disabled={active === 0}
-                aria-label="Предыдущее предложение"
-              >
-                <ChevronLeft />
-              </button>
-              <button
-                type="button"
-                className="production-arrow next"
-                onClick={() => select(active + 1)}
-                disabled={active === candidates.length - 1}
-                aria-label="Следующее предложение"
-              >
-                <ChevronRight />
-              </button>
-            </div>
-            {/* <CarouselDots
-              count={candidates.length}
-              active={active}
-              onSelect={select}
-              label="Показать предложение"
-            /> */}
-          </>
-        ) : (
-          <div className="production-empty">
-            <Flame />
-            <h3>Активных предложений пока нет</h3>
-            <p>Мы покажем их здесь после публикации в системе управления.</p>
-          </div>
-        )}
-        <Link
-          className="production-outline-cta"
-          to={standalone ? "/menu" : "/promotions"}
-        >
-          {standalone ? "Перейти в меню" : "Смотреть все акции"} <ArrowRight />
-        </Link>
+        {sitePromo && <div className="promotion-code-feature" aria-label="Скидка десять процентов по промокоду САЙТ"><strong>−10%</strong><span>Промокод <b>САЙТ</b></span></div>}
+        {sitePromo ? <button className="button primary" type="button" onClick={() => { sessionStorage.setItem("shashlik-promo", "САЙТ"); window.dispatchEvent(new Event("shashlik-promo-change")); navigate("/menu"); }}>Получить скидку 10% <ArrowRight aria-hidden="true" /></button> : <p>Предложение временно недоступно.</p>}
+        {standalone && <p className="promotion-note">Скидка рассчитывается при оформлении заказа. Условия действующего промокода проверяются перед применением.</p>}
       </div>
     </section>
   );
@@ -2362,7 +2357,7 @@ function DeliveryShowcase({ data }: { data: Bootstrap }) {
         <div className="delivery-showcase-grid">
           <article className="delivery-showcase-card courier">
             <img
-              src="/assets/cinematic-grill-v1.png"
+              src="/assets/cinematic-grill-optimized.jpg"
               alt="Горячие блюда с доставкой"
               width="1672"
               height="941"
@@ -2491,6 +2486,7 @@ function KioskShowcase({
               Все киоски <ArrowRight />
             </Link>
           )}
+          {standalone && <Link className="urban-link-button urban-link-button--secondary kiosk-menu-link" to="/menu">Смотреть меню <ArrowRight size={18} aria-hidden="true" /></Link>}
         </div>
         {points.length ? (
           <>
@@ -2522,16 +2518,7 @@ function KioskShowcase({
                       key={point.id}
                     >
                       <div className="kiosk-card-photo">
-                        <img
-                          src={
-                            point.imageUrl || "/assets/home-kiosk-evening.webp"
-                          }
-                          alt={`Киоск по адресу ${point.address}`}
-                          width="1600"
-                          height="800"
-                          loading="lazy"
-                          decoding="async"
-                        />
+                        {point.imageUrl ? <img src={point.imageUrl} alt={`Изображение точки: ${point.address}`} width="1600" height="800" loading="lazy" decoding="async" /> : <div className="kiosk-image-placeholder"><Store aria-hidden="true" /><span>Фото точки пока не добавлено</span></div>}
                         <span>
                           {index + 1} / {points.length}
                         </span>
@@ -2573,7 +2560,7 @@ function KioskShowcase({
                           </span>
                         </div>
                         <a href={routeUrl} target="_blank" rel="noreferrer">
-                          Показать на карте <MapPin />
+                          {point.mapUrl ? "Показать на карте" : "Найти адрес на карте"} <MapPin />
                         </a>
                         <button type="button" className="kiosk-details-button" onClick={(event) => {
                           detailsTrigger.current = event.currentTarget;
@@ -2619,7 +2606,7 @@ function KioskShowcase({
                   <button ref={detailsClose} className="kiosk-modal-close" type="button" onClick={() => setDetails(null)} aria-label="Закрыть подробности">
                     <X />
                   </button>
-                  <div className="kiosk-modal-media"><img src={details.imageUrl || "/assets/home-kiosk-evening.webp"} alt="" /></div>
+                  <div className="kiosk-modal-media">{details.imageUrl ? <img src={details.imageUrl} alt="" /> : <div className="kiosk-image-placeholder"><Store aria-hidden="true" /><span>Фото точки пока не добавлено</span></div>}</div>
                   <div className="kiosk-modal-copy">
                     <p className="eyebrow">Шашлык Лайк × ШашлычОК</p>
                     <h3 id="kiosk-modal-title">{details.address}</h3>
@@ -2739,18 +2726,21 @@ function FavoritesPage({
           <span>Любимые позиции всегда под рукой.</span>
         </div>
         {products.length ? (
-          <div className="favorites-grid">
-            {products.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                data={data}
-                onAdd={onAdd}
-                favorite
-                onFavorite={toggleFavorite}
-              />
-            ))}
-          </div>
+          <>
+            <div className="favorites-grid">
+              {products.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  data={data}
+                  onAdd={onAdd}
+                  favorite
+                  onFavorite={toggleFavorite}
+                />
+              ))}
+            </div>
+            <Link className="urban-link-button urban-link-button--secondary favorites-menu-link" to="/menu">Продолжить выбор <ArrowRight size={18} aria-hidden="true" /></Link>
+          </>
         ) : (
           <div className="production-empty">
             <Heart />
@@ -2878,7 +2868,6 @@ function Menu({
   const [sort, setSort] = useState<MenuSort>("default");
   const [view, setView] = useState<MenuView>("grid");
   const { favorites, toggleFavorite } = useFavorites();
-  const catalogRef = useRef<HTMLDivElement>(null);
   const activeProducts = data.products.filter((product) => product.isActive);
   const normalizedQuery = query.trim().toLocaleLowerCase("ru");
   const searchedProducts = activeProducts.filter(
@@ -2894,9 +2883,14 @@ function Menu({
     if (sort === "name") return a.name.localeCompare(b.name, "ru");
     return a.sortOrder - b.sortOrder;
   });
-  const categories = data.categories.filter((category) =>
-    activeProducts.some((product) => product.categoryId === category.id),
-  );
+  const categories = [
+    ...data.categories.filter((category) =>
+      category.id === "combo" || activeProducts.some((product) => product.categoryId === category.id),
+    ),
+    ...(data.categories.some((category) => category.id === "combo")
+      ? []
+      : [{ id: "combo", name: "Сеты", minPrice: "Скоро появятся", sortOrder: 999, isActive: true }]),
+  ];
   const visibleCategories =
     active === "all"
       ? categories
@@ -2912,20 +2906,14 @@ function Menu({
   }, [active]);
 
   const chooseCategory = (categoryId: string) => {
-    setParams(categoryId === "all" ? {} : { category: categoryId });
-    window.requestAnimationFrame(() =>
-      catalogRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      }),
-    );
+    setParams(categoryId === "all" ? {} : { category: categoryId }, { preventScrollReset: true });
   };
   const categoryImage = (categoryId: string) =>
     activeProducts.find((product) => product.categoryId === categoryId)
       ?.imageUrl || "/assets/placeholder.svg";
 
   return (
-    <div className="menu-shell">
+    <div className={`menu-shell${active !== "all" ? " category-filtered" : ""}`}>
       <HomeHeader
         settings={data.settings}
         cartCount={cartCount}
@@ -3034,14 +3022,14 @@ function Menu({
                   loading="lazy"
                 />
                 <strong>{category.name}</strong>
-                <span>{count}</span>
+                <span>{category.id === "combo" && count === 0 ? "Скоро" : count}</span>
               </button>
             );
           })}
         </div>
       </section>
 
-      <div className="menu-catalog home-container" ref={catalogRef}>
+      <div className="menu-catalog home-container">
         <aside className="menu-sidebar" aria-label="Категории меню">
           <div className="menu-sidebar-head">
             <h2>Категории</h2>
@@ -3076,7 +3064,7 @@ function Menu({
                   loading="lazy"
                 />
                 <strong>{category.name}</strong>
-                <span>{count}</span>
+                <span>{category.id === "combo" && count === 0 ? "Скоро" : count}</span>
               </button>
             );
           })}
@@ -3173,7 +3161,7 @@ function Menu({
             const categoryProducts = sortedProducts.filter(
               (product) => product.categoryId === category.id,
             );
-            if (!categoryProducts.length) return null;
+            if (!categoryProducts.length && category.id !== "combo") return null;
             return (
               <section
                 className={`menu-products-section category-${category.id}`}
@@ -3192,7 +3180,9 @@ function Menu({
                     {categoryProducts.length === 1 ? "блюдо" : "позиций"}
                   </small>
                 </div>
-                <div className={`menu-product-grid ${view}`}>
+                {category.id === "combo" && !categoryProducts.length ? (
+                  <div className="combo-coming-soon" role="status"><span>Сеты</span><h3>Скоро появятся</h3><p>Здесь будут готовые сеты. Пока выбирайте любимые блюда из меню.</p><button type="button" onClick={() => chooseCategory("all")}>Посмотреть меню <ArrowRight size={18} /></button></div>
+                ) : <div className={`menu-product-grid ${view}`}>
                   {categoryProducts.map((product) => (
                     <ProductCard
                       key={product.id}
@@ -3203,11 +3193,11 @@ function Menu({
                       onFavorite={toggleFavorite}
                     />
                   ))}
-                </div>
+                </div>}
               </section>
             );
           })}
-          {!visibleCategories.some((category) =>
+          {active !== "combo" && !visibleCategories.some((category) =>
             sortedProducts.some(
               (product) => product.categoryId === category.id,
             ),
@@ -3675,6 +3665,7 @@ function ProductPage({
             <p className="eyebrow">Настоящий вкус на углях</p>
             <h1>{product.name}</h1>
             <p>{product.description}</p>
+            {product.categoryId === "combo" && <div className="product-set-components"><h2>В составе сета</h2><ul>{(product.components || []).map((component) => { const included = data.products.find((item) => item.id === component.productId); return included ? <li key={included.id}>{included.name} — {component.quantity} {included.unit}</li> : null; })}</ul></div>}
             <div className="product-detail-meta">
               <span>{product.unit}</span>
               <span
@@ -3981,6 +3972,7 @@ function CartContent({
   onCheckout,
   titleId,
   checkoutSummary = false,
+  checkoutQuote,
 }: {
   data: Bootstrap;
   cart: ReturnType<typeof useCart>;
@@ -3988,7 +3980,10 @@ function CartContent({
   onCheckout?: () => void;
   titleId?: string;
   checkoutSummary?: boolean;
+  checkoutQuote?: { discount: number; total: number; deliveryPrice: number } | null;
 }) {
+  const [promoDraft, setPromoDraft] = useState(cart.promoCode);
+  const promoControls = !checkoutSummary && <form className="cart-promo" onSubmit={(event) => { event.preventDefault(); cart.applyPromoCode(promoDraft); }}><label htmlFor={compact ? "drawer-promo-code" : "cart-promo-code"}>Промокод</label><div><input id={compact ? "drawer-promo-code" : "cart-promo-code"} value={promoDraft} onChange={(event) => setPromoDraft(event.target.value)} autoComplete="off" placeholder="Введите код" /><button type="submit">Применить</button></div>{cart.promoQuote && <p role="status">Промокод {cart.promoQuote.code} применён. Скидка {money(cart.promoQuote.discount)}. <button type="button" onClick={() => { cart.applyPromoCode(""); setPromoDraft(""); }}>Убрать</button></p>}{cart.promoError && <p className="cart-promo-error" role="alert">{cart.promoError}</p>}</form>;
   const crossSell = data.products
     .filter((product) =>
       ["flatbread", "garlic-sauce", "shippi", "tomato-sauce"].includes(
@@ -4085,13 +4080,15 @@ function CartContent({
           <aside className="cart-page-summary" aria-label="Итого по заказу">
             <div className="cart-summary-heading">
               <span>Итого</span>
-              <strong>{money(cart.total)}</strong>
+              <strong>{money(cart.promoQuote?.total ?? cart.total)}</strong>
               <small>Оплата при получении</small>
             </div>
+            {promoControls}
             <Totals
               subtotal={cart.subtotal}
               deliveryPrice={cart.deliveryPrice}
-              total={cart.total}
+              discount={cart.promoQuote?.discount || 0}
+              total={cart.promoQuote?.total ?? cart.total}
             />
             <Link className="button primary full" to="/checkout" onClick={onCheckout}>
               Перейти к оформлению <ArrowRight aria-hidden="true" />
@@ -4122,10 +4119,12 @@ function CartContent({
         <DeliveryProgress subtotal={cart.subtotal} settings={data.settings} />
       )}
       {crossSellBlock}
+      {promoControls}
       <Totals
         subtotal={cart.subtotal}
-        deliveryPrice={cart.deliveryPrice}
-        total={cart.total}
+        deliveryPrice={checkoutSummary ? (checkoutQuote?.deliveryPrice ?? cart.deliveryPrice) : cart.deliveryPrice}
+        discount={checkoutSummary ? (checkoutQuote?.discount || 0) : (cart.promoQuote?.discount || 0)}
+        total={checkoutSummary ? (checkoutQuote?.total ?? cart.total) : (cart.promoQuote?.total ?? cart.total)}
       />
       {!checkoutSummary && (
         <Link
@@ -4169,7 +4168,7 @@ function DeliveryProgress({
         <span style={{ width: `${progress}%` }} />
       </div>
       <small>
-        {money(subtotal)} / {money(settings.freeDeliveryFrom)}
+        {money(subtotal)} / {money(settings.freeDeliveryFrom)} · порог считается до скидки
       </small>
     </div>
   );
@@ -4178,10 +4177,12 @@ function DeliveryProgress({
 function Totals({
   subtotal,
   deliveryPrice,
+  discount = 0,
   total,
 }: {
   subtotal: number;
   deliveryPrice: number;
+  discount?: number;
   total: number;
 }) {
   return (
@@ -4194,6 +4195,7 @@ function Totals({
         <span>Доставка</span>
         <strong>{deliveryPrice ? money(deliveryPrice) : "Бесплатно"}</strong>
       </p>
+      {discount > 0 && <p><span>Скидка</span><strong>−{money(discount)}</strong></p>}
       <p>
         <span>Итого</span>
         <strong>{money(total)}</strong>
@@ -4204,6 +4206,9 @@ function Totals({
 
 function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
   const navigate = useNavigate();
+  const pendingOrder = useRef<{ key: string; body: string } | null>(null);
+  const submitting = useRef(false);
+  const [checkoutQuote, setCheckoutQuote] = useState<{ discount: number; total: number; deliveryPrice: number } | null>(null);
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">(
     "delivery",
   );
@@ -4229,6 +4234,15 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
   });
 
   useEffect(() => trackEvent("checkout_started", { value: cart.total }), []);
+  useEffect(() => {
+    if (!cart.promoCode || !cart.items.length) { setCheckoutQuote(null); return; }
+    setCheckoutQuote(null);
+    let active = true;
+    apiFetch("/api/promotions/quote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items: cart.items, deliveryType, promoCode: cart.promoCode }) })
+      .then(async (response) => { const quote = await response.json(); if (active) setCheckoutQuote(response.ok ? quote : null); })
+      .catch(() => { if (active) setCheckoutQuote(null); });
+    return () => { active = false; };
+  }, [cart.items, cart.promoCode, deliveryType]);
 
   async function validateAddress() {
     if (!form.address.trim()) return false;
@@ -4268,23 +4282,27 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
     if (cart.subtotal < data.settings.minOrderAmount) {
       setError(`Минимальная сумма заказа — ${money(data.settings.minOrderAmount)}.`);
       setBusy(false);
+      submitting.current = false;
       return;
     }
     if (cart.subtotal > data.settings.maxOrderAmount) {
       setError(`Максимальная сумма заказа — ${money(data.settings.maxOrderAmount)}.`);
       setBusy(false);
+      submitting.current = false;
       return;
     }
     const normalizedPhone = normalizeRussianPhone(form.phone);
     if (!normalizedPhone) {
       setError("Укажите российский номер телефона: +7 (900) 000-00-00.");
       setBusy(false);
+      submitting.current = false;
       return;
     }
     if (deliveryType === "delivery" && addressState.status !== "valid") {
@@ -4292,6 +4310,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
       if (!valid) {
         setError("Уточните адрес в зоне доставки перед оформлением заказа.");
         setBusy(false);
+        submitting.current = false;
         return;
       }
     }
@@ -4303,16 +4322,21 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
       phone: normalizedPhone,
       deliveryType,
       paymentMethod,
+      promoCode: cart.promoCode,
       pickupPointName: pickupPoint?.name || "",
       attribution: captureAttribution(),
       analyticsSessionId: analyticsSessionId(),
       items: cart.items,
     };
+    const body = JSON.stringify(payload);
+    if (!pendingOrder.current || pendingOrder.current.body !== body) {
+      pendingOrder.current = { key: crypto.randomUUID(), body };
+    }
     try {
       const response = await apiFetch("/api/orders", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: { "content-type": "application/json", "Idempotency-Key": pendingOrder.current.key },
+        body: pendingOrder.current.body,
       });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -4345,6 +4369,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
         localStorage.setItem("recentOrders", JSON.stringify([json.order]));
       }
       setActiveOrderToken(json.order.trackingToken);
+      pendingOrder.current = null;
       cart.clear();
       navigate(`/order/${json.order.trackingToken}`);
     } catch {
@@ -4354,6 +4379,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
       trackEvent("checkout_error", { errorCode: "network" });
     } finally {
       setBusy(false);
+      submitting.current = false;
     }
   }
 
@@ -4601,7 +4627,8 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
               {error && <p className="form-error">{error}</p>}
             </div>
             <aside className="summary-panel">
-              <CartContent data={data} cart={cart} compact checkoutSummary />
+              <CartContent data={data} cart={cart} compact checkoutSummary checkoutQuote={checkoutQuote} />
+              {cart.promoCode && <div className="checkout-promo-summary" role="status">{checkoutQuote ? <>Промокод {cart.promoCode}: скидка {money(checkoutQuote.discount)}. Итого {money(checkoutQuote.total)}.</> : <>Промокод {cart.promoCode} будет проверен при оформлении заказа.</>}</div>}
               <button
                 className="button primary full checkout-submit"
                 disabled={busy}
@@ -5071,6 +5098,7 @@ function OrderTracking({
                 <b>{money(order.deliveryPrice)}</b>
               </div>
             )}
+            {Boolean(order.discount) && <div className="order-status-price-row"><span>Промокод {order.promoCode}</span><b>−{money(order.discount || 0)}</b></div>}
             <div className="order-status-total">
               <span>Итого</span>
               <strong>{money(order.total)}</strong>
@@ -5175,14 +5203,15 @@ function OrderTracking({
               <Phone aria-hidden="true" />
             </span>
             <p>
-              <strong>Есть вопросы по заказу?</strong>
-              <small>Свяжитесь с нами — поможем в любой ситуации.</small>
+              <strong>Возникла проблема с заказом? Позвоните — разберёмся!</strong>
+              <small>Выберите удобный номер.</small>
             </p>
           </div>
           <a href={phoneHref(supportPhone)}>
             <Phone aria-hidden="true" /> {supportPhone}{" "}
             <ArrowRight aria-hidden="true" />
           </a>
+          <a href={phoneHref("+7 (995) 669-12-42")}><Phone aria-hidden="true" /> +7 (995) 669-12-42 <ArrowRight aria-hidden="true" /></a>
           <a
             className="telegram"
             href="https://t.me/iamartush1an"
@@ -5417,6 +5446,7 @@ function Delivery({
                 Быстро, горячо, с любовью! Доставляем ваш любимый шашлык по
                 Правому берегу и Центральному району Воронежа.
               </p>
+              <Link className="urban-link-button urban-link-button--primary secondary-hero-cta" to="/menu">Выбрать блюда <ArrowRight size={18} aria-hidden="true" /></Link>
             </div>
             <p className="delivery-handwrite" aria-hidden="true">
               Доставим
@@ -5674,28 +5704,24 @@ function About({
       title: "Качество",
       text: "Вкус, который хочется повторить.",
       icon: <Beef />,
-      image: "/assets/about-benefits-panorama.jpg",
       position: "left",
     },
     {
       title: "Натуральные продукты",
       text: "Свежие продукты и ингредиенты для любимых блюд.",
       icon: <Leaf />,
-      image: "/assets/about-benefits-panorama.jpg",
       position: "center",
     },
     {
       title: "Опыт",
       text: "Знаем, каким должен быть настоящий вкус блюд на углях.",
       icon: <ChefHat />,
-      image: "/assets/home-hero-cinematic.webp",
       position: "experience",
     },
     {
       title: "Команда",
       text: "Готовим для вас с вниманием к вкусу и качеству.",
       icon: <Users />,
-      image: "/assets/about-benefits-panorama.jpg",
       position: "right",
     },
   ];
@@ -5733,6 +5759,7 @@ function About({
                 настоящему шашлыку, качественным продуктам и вкусу блюд,
                 приготовленных на углях.
               </p>
+              <Link className="urban-link-button urban-link-button--primary secondary-hero-cta" to="/menu">Смотреть меню <ArrowRight size={18} aria-hidden="true" /></Link>
             </div>
             <p className="about-handwrite" aria-hidden="true">
               Настоящий
@@ -5769,19 +5796,12 @@ function About({
           className="about-values home-container"
           aria-label="Ценности бренда"
         >
-          {benefits.map((benefit) => (
+          {benefits.map((benefit, index) => (
             <article
               className={`about-value-card ${benefit.position}`}
               key={benefit.title}
             >
-              <img
-                src={benefit.image}
-                alt=""
-                width="1800"
-                height="600"
-                loading="lazy"
-                decoding="async"
-              />
+              <span className="about-value-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
               <div>
                 <span className="about-value-icon">{benefit.icon}</span>
                 <h2>{benefit.title}</h2>
@@ -5793,18 +5813,11 @@ function About({
 
         <figure className="about-brand-photo">
           <div className="about-photo-frame">
-            <img
-              src="/assets/home-kiosk-evening.webp"
-              alt="Брендированная визуализация фирменной точки"
-              width="1792"
-              height="1024"
-              loading="lazy"
-              decoding="async"
-            />
+            <BrandLogo className="about-official-logo" />
             <i aria-hidden="true" />
             <b aria-hidden="true" />
           </div>
-          <figcaption>Фирменный образ точки</figcaption>
+          <figcaption>Фирменный знак</figcaption>
           <p aria-hidden="true">
             Всегда рады
             <br />
@@ -5903,6 +5916,7 @@ function Contacts({
                 Отвечаем на вопросы, принимаем заказы и ждём вас в наших киосках
                 в Воронеже.
               </p>
+              <Link className="urban-link-button urban-link-button--primary secondary-hero-cta" to="/menu">Перейти в меню <ArrowRight size={18} aria-hidden="true" /></Link>
             </div>
             <p className="contacts-handwrite" aria-hidden="true">
               Ждём вас в наших
@@ -6374,12 +6388,14 @@ function Admin({
       icon: <Grid2X2 />,
       visible: can(admin, "products.edit"),
     },
+    { id: "sets", label: "Сеты", icon: <Package />, visible: can(admin, "products.edit") },
     {
       id: "addons",
       label: "Дополнения",
       icon: <Plus />,
       visible: can(admin, "products.edit"),
     },
+    { id: "promotions", label: "Промокоды", icon: <Star />, visible: can(admin, "products.price_edit") },
     {
       id: "pickup",
       label: "Киоски",
@@ -6501,6 +6517,7 @@ function Admin({
             />
           </label>
           <div className="admin-top-actions">
+            <WinterToggle />
             <ThemeToggle
               mode={themeMode}
               activeTheme={activeTheme}
@@ -6540,6 +6557,7 @@ function Admin({
             query={query}
           />
         )}
+        {tab === "sets" && <AdminProducts admin={admin} save={authorized} uploadImage={uploadImage} query={query} setOnly />}
         {tab === "categories" && (
           <AdminCategories admin={admin} save={authorized} query={query} />
         )}
@@ -6551,6 +6569,7 @@ function Admin({
             query={query}
           />
         )}
+        {tab === "promotions" && <AdminPromotions admin={admin} save={authorized} />}
         {tab === "pickup" && (
           <AdminPickup
             admin={admin}
@@ -6581,6 +6600,19 @@ function Admin({
       </div>
     </section>
   );
+}
+
+function AdminPromotions({ admin, save }: { admin: AdminBootstrap; save: (url: string, init?: RequestInit) => Promise<void> }) {
+  const toMoscowInput = (value: string) => value ? new Date(Date.parse(value) + 3 * 60 * 60 * 1000).toISOString().slice(0, 16) : "";
+  const fromMoscowInput = (value: string) => value ? `${value}:00+03:00` : "";
+  const [draft, setDraft] = useState({ code: "", type: "percent" as "percent" | "fixed", amount: 10, startsAt: "", endsAt: "", isActive: true });
+  const [editingId, setEditingId] = useState("");
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void save(editingId ? `/api/admin/promotions/${editingId}` : "/api/admin/promotions", { method: editingId ? "PUT" : "POST", body: JSON.stringify({ ...draft, startsAt: fromMoscowInput(draft.startsAt), endsAt: fromMoscowInput(draft.endsAt) }) });
+    setEditingId("");
+  };
+  return <section className="admin-promotions"><h1>Промокоды</h1><p>Скидка рассчитывается сервером при оформлении заказа. Время — московское.</p><form onSubmit={submit}><label>Код<input required value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value })} /></label><label>Тип скидки<select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as "percent" | "fixed" })}><option value="percent">Процент</option><option value="fixed">Сумма в ₽</option></select></label><label>Размер<input type="number" required min="1" max={draft.type === "percent" ? 100 : undefined} value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: Number(event.target.value) })} /></label><label>Начало<input type="datetime-local" value={draft.startsAt} onChange={(event) => setDraft({ ...draft, startsAt: event.target.value })} /></label><label>Окончание<input type="datetime-local" value={draft.endsAt} onChange={(event) => setDraft({ ...draft, endsAt: event.target.value })} /></label><label><input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })} /> Активен</label><button type="submit" className="button primary">{editingId ? "Сохранить" : "Создать промокод"}</button></form><div className="admin-promotion-list">{admin.promotions.map((promotion) => <article key={promotion.id}><strong>{promotion.code}</strong><span>{promotion.type === "percent" ? `${promotion.amount}%` : money(promotion.amount)}</span><span>{!promotion.isActive ? "Отключён" : promotion.startsAt && Date.parse(promotion.startsAt) > Date.now() ? "Запланирован" : promotion.endsAt && Date.parse(promotion.endsAt) <= Date.now() ? "Истёк" : "Активен"} · применений: {promotion.uses || 0}</span><button type="button" onClick={() => { setEditingId(promotion.id); setDraft({ code: promotion.code, type: promotion.type, amount: promotion.amount, startsAt: toMoscowInput(promotion.startsAt), endsAt: toMoscowInput(promotion.endsAt), isActive: promotion.isActive }); }}>Изменить</button><button type="button" onClick={() => void save(`/api/admin/promotions/${promotion.id}`, { method: "DELETE" })}>Отключить</button></article>)}</div></section>;
 }
 
 function AdminProfile({
@@ -7622,6 +7654,7 @@ function AdminOrderDialog({
                   <b>{money(item.total)}</b>
                 </div>
               ))}
+              {Boolean(order.discount) && <div className="order-detail-line"><span>Промокод {order.promoCode}: скидка</span><b>−{money(order.discount || 0)}</b></div>}
               <div className="order-detail-total">
                 <span>Итого</span>
                 <b>{money(order.total)}</b>
@@ -7767,11 +7800,13 @@ function AdminProducts({
   save,
   uploadImage,
   query,
+  setOnly = false,
 }: {
   admin: AdminBootstrap;
   save: (url: string, init?: RequestInit) => Promise<void>;
   uploadImage: (file: File) => Promise<string>;
   query: string;
+  setOnly?: boolean;
 }) {
   const blank: Product = {
     id: "",
@@ -7781,7 +7816,8 @@ function AdminProducts({
     price: 0,
     unit: "1 шт",
     step: 1,
-    categoryId: admin.categories[0]?.id || "shashlik",
+    categoryId: setOnly ? "combo" : (admin.categories[0]?.id || "shashlik"),
+    components: [],
     imageUrl: "/assets/placeholder.svg",
     images: [],
     isActive: true,
@@ -7891,17 +7927,14 @@ function AdminProducts({
   const normalized = query.trim().toLowerCase();
   const products = admin.products.filter(
     (product) =>
-      !normalized ||
-      `${product.name} ${product.description} ${admin.categories.find((category) => category.id === product.categoryId)?.name || ""}`
-        .toLowerCase()
-        .includes(normalized),
+      (!setOnly || product.categoryId === "combo") && (!normalized || `${product.name} ${product.description} ${admin.categories.find((category) => category.id === product.categoryId)?.name || ""}`.toLowerCase().includes(normalized)),
   );
 
   return (
     <>
       <AdminSectionHero
         eyebrow="Управление меню"
-        title="МЕНЮ / ТОВАРЫ"
+        title={setOnly ? "СЕТЫ" : "МЕНЮ / ТОВАРЫ"}
         text="Доступность, цены и популярные позиции сразу отражаются на витрине."
         action={
           editable && canEditPrice ? (
@@ -8002,6 +8035,7 @@ function AdminProducts({
                 </option>
               ))}
             </select>
+            {editing.categoryId === "combo" && <fieldset className="admin-addon-picker"><legend>Состав сета</legend><p>Цена сета задаётся отдельно. Все обязательные товары должны быть доступны для заказа.</p>{admin.products.filter((product) => product.categoryId !== "combo").map((product) => { const component = editing.components?.find((item) => item.productId === product.id); return <label key={product.id}><input type="checkbox" checked={Boolean(component)} onChange={(event) => setEditing((current) => ({ ...current, components: event.target.checked ? [...(current.components || []), { productId: product.id, quantity: product.step || 1 }] : (current.components || []).filter((item) => item.productId !== product.id) }))} /> {product.name} {component && <input type="number" min={product.step || 1} step={product.step || 1} value={component.quantity} aria-label={`Количество ${product.name}`} onChange={(event) => setEditing((current) => ({ ...current, components: (current.components || []).map((item) => item.productId === product.id ? { ...item, quantity: Number(event.target.value) } : item) }))} />}</label>; })}</fieldset>}
             <label className="admin-wide-field">
               Варианты выбора
               <input
