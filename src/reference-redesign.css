@@ -877,7 +877,7 @@ section.admin-login > form > label > input {
 :where(.admin-shell, .admin-login)
   :where(.admin-section-title, .admin-card-title, .admin-login-brand)
   strong {
-  font-family: "Geologica", "Onest", system-ui, sans-serif !important;
+  font-family: "Onest", "Geologica", system-ui, sans-serif !important;
   font-weight: 760;
   font-kerning: normal;
 }
@@ -1569,7 +1569,7 @@ section.admin-login > form {
 .cart-page-intro > h1 {
   margin: 0;
   color: #181512;
-  font-family: "Geologica", "Onest", system-ui, sans-serif;
+  font-family: "Onest", "Geologica", system-ui, sans-serif;
   font-size: clamp(44px, 6.2vw, 82px);
   font-weight: 720;
   letter-spacing: -0.055em;

@@ -1,0 +1,198 @@
+/* Shared navigation and home hero refinements. */
+@media (min-width: 761px) {
+  .urban-header .urban-nav { gap: clamp(2px, .55vw, 10px); }
+  .urban-header .urban-nav > a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px clamp(13px, 1.1vw, 19px);
+    border: 0;
+    border-radius: 999px;
+    transition: background-color .2s ease, color .2s ease, transform .2s ease;
+  }
+  .urban-header .urban-nav > a:hover:not(.active),
+  .urban-header .urban-nav > a:focus-visible:not(.active) { background: #f1e2d5; color: #87351f; }
+  .urban-header .urban-nav > a.active { padding-inline: clamp(13px, 1.1vw, 19px); background: #e4572e; color: #fff; }
+}
+
+.urban-home .urban-hero .urban-eyebrow { display: flex; align-items: center; gap: 12px; width: max-content; max-width: 100%; margin-bottom: 22px; white-space: nowrap; }
+.urban-home .urban-hero .urban-eyebrow > span:first-child { flex: 0 0 9px; width: 9px; height: 9px; }
+.urban-home .urban-hero .urban-eyebrow > span:not(:first-child) { width: auto; height: auto; border-radius: 0; background: none; }
+.urban-home .urban-hero-benefits > span > span { display: inline; width: auto; max-width: none; }
+
+@media (min-width: 641px) {
+  .urban-home .urban-hero { min-height: min(720px, calc(100svh - 100px)); }
+  .urban-home .urban-hero-copy { width: min(calc(100% - 80px), 1320px); padding-block: 52px 40px; }
+  .urban-home .urban-hero h1 { max-width: 710px; font-size: clamp(3.7rem, 5.3vw, 6.5rem); line-height: .94; }
+  .urban-home .urban-hero-lead { width: min(43ch, 47%); max-width: none; margin: 24px 0; line-height: 1.45; }
+  .urban-home .urban-hero-benefits { display: flex; flex-wrap: nowrap; gap: clamp(12px, 2vw, 30px); max-width: 690px; margin-top: 44px; }
+  .urban-home .urban-hero-benefits > span { display: flex; flex: 0 1 180px; align-items: center; gap: 8px; max-width: 180px; font-size: .85rem; }
+  .urban-home .urban-hero-benefits > .urban-hero-mobile-only,
+  .urban-home .urban-hero-benefits .urban-hero-mobile-only { display: none; }
+}
+
+@media (max-width: 640px) {
+  .urban-home .urban-hero { height: calc(100svh - 89px); min-height: 0; }
+  .urban-home .urban-hero-copy { height: 100%; min-height: 0; padding-top: clamp(18px, 3.5svh, 30px); padding-bottom: clamp(12px, 2.5svh, 26px); }
+  .urban-home .urban-hero .urban-eyebrow { margin-bottom: clamp(12px, 2.4svh, 24px); }
+  .urban-home .urban-hero-lead { margin-block: clamp(11px, 2.2svh, 22px); }
+  .urban-home .urban-hero-benefits { margin-top: auto; }
+  .urban-home .urban-hero-benefits > span { min-height: clamp(70px, 13svh, 112px); }
+  .urban-home .urban-hero-visual img { object-position: 64% 70%; }
+}
+@media (max-width: 640px) and (max-height: 740px) {
+  .urban-home .urban-hero h1 { font-size: clamp(2.45rem, 10.4vw, 4rem); }
+  .urban-home .urban-hero-lead { font-size: clamp(.84rem, 3.25vw, 1rem); line-height: 1.25; }
+  .urban-home .urban-hero-actions a { min-height: 44px; padding-block: 6px; }
+  .urban-home .urban-hero-benefits > span { gap: 3px; padding: 5px 2px; font-size: .65rem; }
+  .urban-home .urban-hero-benefits > span svg { width: 23px; height: 23px; }
+}
+
+/* A full-page Christmas palette with falling snow. */
+html[data-winter="on"] {
+  --christmas-pine: #153f39;
+  --christmas-muted: #476963;
+  --christmas-red: #a9273a;
+  --christmas-gold: #b39447;
+  --christmas-snow: #edf6f2;
+  --christmas-card: #fffdfa;
+  --christmas-border: #bdd4cd;
+  --ui-ink: var(--christmas-pine);
+  --ui-muted: var(--christmas-muted);
+  --ui-accent: var(--christmas-red);
+  --ui-accent-hover: #862033;
+  --ui-ring: var(--christmas-red);
+  --urban-ink: #153f39;
+  --urban-muted: #476963;
+  --urban-orange: #b72f3f;
+  --urban-cream: #e8f2ee;
+  --urban-paper: #f4faf8;
+  --urban-line: #bdd4cd;
+  --brand-ember: #b72f3f;
+  --winter-text: #153f39;
+  --winter-muted: #476963;
+  --winter-border: #bdd4cd;
+  --winter-surface: #eef7f3;
+  --winter-surface-raised: #fffdfa;
+  --winter-surface-soft: #e1f0ea;
+  background: #edf6f2;
+}
+html[data-winter="on"] body,
+html[data-winter="on"] #root,
+html[data-winter="on"] :is(.urban-home, .home-shell, .menu-shell, .commerce-shell, .product-shell, .product-page, .checkout-page, .cart-page) {
+  background-color: #edf6f2;
+  color: #153f39;
+}
+html[data-winter="on"] :is(.urban-header, .home-header) { background: #f4faf8; border-color: #bdd4cd; color: #153f39; }
+html[data-winter="on"] :is(.urban-header .urban-nav > a, .urban-header .urban-icon-button, .urban-header .urban-cart-button) { color: #153f39; }
+html[data-winter="on"] .urban-header .urban-nav > a:hover:not(.active) { background: #e1eee7; color: #8e2538; }
+html[data-winter="on"] .urban-header .urban-nav > a.active { background: #a9273a; color: white; }
+html[data-winter="on"] :is(.urban-eyebrow, .section-kicker, .menu-hero-kicker, .product-detail-copy .eyebrow, .production-eyebrow) { color: #a9273a; }
+html[data-winter="on"] :is(.urban-home, .menu-shell, .commerce-shell, .home-shell) :is(h1,h2,h3,h4,strong) { color: #153f39; }
+html[data-winter="on"] :is(.urban-home, .menu-shell, .commerce-shell, .home-shell) :is(p,small,label) { color: #476963; }
+html[data-winter="on"] :is(.urban-home, .menu-shell, .commerce-shell, .home-shell) a:not(.urban-nav a):not(.urban-link-button):not(.button) { color: #8f2939; }
+html[data-winter="on"] :is(.urban-link-button--primary, .button.primary, .menu-product-buy > button, .urban-product-add, .checkout-submit, .cart-checkout) { background: #a9273a; border-color: #a9273a; color: white; }
+html[data-winter="on"] :is(.urban-link-button--primary, .button.primary, .menu-product-buy > button, .urban-product-add, .checkout-submit, .cart-checkout) :is(span,strong,svg) { color: white; }
+html[data-winter="on"] :is(.urban-link-button--secondary, .menu-product-card, .product-suggested-grid article, .product-feature-strip, .checkout-form-card, .summary-panel, .cart-page-panel, .urban-category, .urban-reasons-grid > div, .cart-row, .cross-sell) { background-color: #fffdfa; border-color: #bdd4cd; }
+html[data-winter="on"] :is(input,select,textarea) { border-color: #adcac0; }
+html[data-winter="on"] :is(input,select,textarea):focus { border-color: #a9273a; }
+html[data-winter="on"] .product-shell .product-page { max-width: none; width: 100%; padding-inline: max(24px, calc((100vw - 1440px) / 2)); }
+html[data-winter="on"] .product-shell .product-detail-copy h1 { color: #153f39; }
+html[data-winter="on"] .product-shell .product-detail-copy > p:not(.eyebrow) { color: #476963; }
+html[data-winter="on"] .product-shell .product-detail-buy > strong { color: #a9273a; }
+html[data-winter="on"] .product-shell .product-detail-copy > .button.primary { background: #a9273a; box-shadow: 0 12px 28px #7f263024; }
+html[data-winter="on"] .urban-home .urban-hero { background: #e9f3ee; }
+html[data-winter="on"] .urban-home .urban-hero-visual::after { background: linear-gradient(90deg, #e9f3ee 0%, #e9f3eedc 30%, #e9f3ee00 63%); }
+html[data-winter="on"] .urban-home .urban-hero h1 em { color: #a9273a; }
+html[data-winter="on"] .urban-home .urban-hero h1 em::after { background-color: #a9273a; }
+html[data-winter="on"] .urban-home .urban-hero-actions .urban-link-button--primary { background: #a9273a; box-shadow: 0 13px 26px #7f26302d; }
+html[data-winter="on"] .urban-home .urban-hero-benefits > span svg { color: #b39447; }
+html[data-winter="on"] :is(.product-shell .product-detail-media > span, .product-shell .product-gallery-thumbs button.active, .product-shell .product-story-tabs button[aria-selected="true"], .menu-shell .menu-mobile-category-list > button.active, .menu-shell .product-media > span, .menu-shell .menu-view-switch button.active) { background: #a9273a; border-color: #a9273a; color: white; }
+html[data-winter="on"] :is(.product-shell .product-feature-strip svg, .product-shell .product-suggested-head a, .product-shell .product-suggested-grid button, .menu-shell .menu-breadcrumb svg, .checkout-step-number, .cart-heading-count) { color: #a9273a; }
+html[data-winter="on"] :is(.product-shell .product-suggested-grid button, .checkout-option-check, .checkout-payment-check) { background-color: #f8e9e7; }
+html[data-winter="on"] :is(.menu-shell .menu-hero, .menu-shell .menu-catalog, .checkout-page, .cart-page) { background-color: #edf6f2; }
+html[data-winter="on"] :is(.menu-shell .menu-search, .menu-shell .menu-sort, .menu-shell .menu-view-switch, .checkout-input-wrap, .checkout-fulfillment-options > label, .checkout-payment-options > label, .checkout-textarea-wrap) { background-color: #fffdfa; border-color: #bdd4cd; color: #153f39; }
+
+/* Keep the same pine, cranberry, gold and snow surfaces on every public page. */
+html[data-winter="on"] :is(.home-shell, .menu-shell, .commerce-shell, .urban-home, .drawer-shell) {
+  --home-bg: var(--christmas-snow);
+  --home-surface: var(--christmas-card);
+  --home-surface-2: #e1eee8;
+  --home-border: var(--christmas-border);
+  --home-text: var(--christmas-pine);
+  --home-muted: var(--christmas-muted);
+  --home-accent: var(--christmas-red);
+  --home-accent-2: var(--christmas-gold);
+  --color-background: var(--christmas-snow);
+  --color-heading: var(--christmas-pine);
+  --color-text: var(--christmas-pine);
+  --color-muted: var(--christmas-muted);
+  --color-primary: var(--christmas-red);
+  --color-border: var(--christmas-border);
+  --ref-orange-2: var(--christmas-red);
+}
+html[data-winter="on"] :is(.menu-shell, .product-shell .product-page, .checkout-page, .cart-page, .production-standalone) { background: var(--christmas-snow) !important; }
+html[data-winter="on"] .menu-shell .menu-hero { background: var(--christmas-snow) !important; }
+html[data-winter="on"] .menu-shell .menu-hero-media::after { background: linear-gradient(90deg,var(--christmas-snow),#edf6f2e6 12%,transparent 60%); }
+html[data-winter="on"] .menu-shell .menu-mobile-categories { background: #e1eee8; border-color: var(--christmas-border); }
+html[data-winter="on"] :is(.menu-shell .menu-product-card, .menu-shell .menu-product-card .product-body, .product-shell .product-suggested-grid article, .product-shell .product-feature-strip, .product-shell .product-detail-addons label, .cart-page-panel, .checkout-form-card, .summary-panel, .production-card) { background: var(--christmas-card); border-color: var(--christmas-border); color: var(--christmas-pine); }
+html[data-winter="on"] :is(.menu-shell .menu-product-card .product-description, .product-shell .product-feature-strip small, .checkout-page .checkout-payment-label small, .cart-page .cart-row small) { color: var(--christmas-muted); }
+html[data-winter="on"] :is(.menu-shell .menu-product-section-head span, .menu-shell .menu-section-view-all, .menu-shell .menu-mobile-category-list > button, .product-shell .product-suggested-head a, .checkout-page .checkout-back, .cart-page .cart-page-close) { color: var(--christmas-red); }
+html[data-winter="on"] :is(.menu-shell .menu-search, .menu-shell .menu-sort, .menu-shell .menu-view-switch, .product-shell .product-story-tabs, .checkout-page .checkout-input-wrap, .checkout-page .address-details input, .cart-promo input) { background: var(--christmas-card); border-color: var(--christmas-border); color: var(--christmas-pine); }
+html[data-winter="on"] :is(.menu-shell input, .menu-shell select, .checkout-page input, .checkout-page select, .checkout-page textarea, .cart-promo input) { color: var(--christmas-pine); }
+html[data-winter="on"] :is(.menu-shell input, .checkout-page input, .checkout-page textarea, .cart-promo input)::placeholder { color: #6d827b; }
+html[data-winter="on"] :is(.product-shell .product-feature-strip svg, .checkout-page .checkout-input-wrap > svg:first-child, .checkout-page .checkout-payment-icon svg, .checkout-page .checkout-fulfillment-options button > svg:first-child, .cart-page .cart-heading svg, .cross-sell-heading svg) { color: var(--christmas-gold); }
+html[data-winter="on"] :is(.checkout-page .checkout-payment-icon, .checkout-page .checkout-fulfillment-options button > svg:first-child, .checkout-step-number, .cart-heading-count) { background: #edf0dd; color: var(--christmas-red); }
+html[data-winter="on"] .commerce-shell .checkout-page :is(.checkout-fulfillment-options button, .checkout-payment-options button) { background: var(--christmas-card); border-color: var(--christmas-border); color: var(--christmas-pine); }
+html[data-winter="on"] .commerce-shell .checkout-form-card .segmented :is(.checkout-fulfillment-options,.checkout-payment-options) button.active,
+html[data-winter="on"] .commerce-shell .checkout-form-card .segmented.checkout-fulfillment-options button.active,
+html[data-winter="on"] .commerce-shell .checkout-form-card .segmented.checkout-payment-options button.active { background: #f8eeeb; border-color: var(--christmas-red); box-shadow: 0 0 0 3px #a9273a17; }
+html[data-winter="on"] :is(.checkout-page .summary-panel .cart.compact .cross-sell, .drawer-shell .cart-drawer .cart.compact .cross-sell) { background: linear-gradient(135deg,#e4efe9,#fffdfa); border-color: var(--christmas-border); }
+html[data-winter="on"] :is(.checkout-page .summary-panel .cross-sell-list button, .cart-page .cross-sell-list button) { background: var(--christmas-card); border-color: var(--christmas-border); color: var(--christmas-pine); }
+html[data-winter="on"] :is(.checkout-page .summary-panel .cross-sell-list .cross-sell-add, .cart-page .cross-sell-add, .checkout-page .checkout-payment-check, .checkout-page .checkout-option-check) { background: var(--christmas-red); color: white; }
+html[data-winter="on"] :is(.home-shell, .menu-shell, .commerce-shell, .urban-home, .drawer-shell) :is(.button.primary, .home-button-primary, .secondary-hero-cta, .checkout-submit, .cart-checkout) { background: var(--christmas-red) !important; border-color: var(--christmas-red) !important; color: white !important; box-shadow: 0 12px 24px #7f263027; }
+html[data-winter="on"] :is(.home-shell, .menu-shell, .commerce-shell, .urban-home, .drawer-shell) :is(.button.primary, .home-button-primary, .secondary-hero-cta, .checkout-submit, .cart-checkout):hover:not(:disabled) { background: #862033 !important; border-color: #862033 !important; }
+html[data-winter="on"] .drawer-shell .cart-drawer { background: var(--christmas-snow); color: var(--christmas-pine); }
+html[data-winter="on"] .drawer-shell .cart-drawer-header { background: linear-gradient(90deg,#edf6f2 4%,#edf6f2f0 51%,#edf6f233 88%),url('/assets/chicken-skewer-reference-v1.jpg') 100% 48% / auto 180% no-repeat; }
+html[data-winter="on"] :is(.drawer-shell .cart-drawer-header h2, .drawer-shell .cart-drawer .cart.compact .cart-row strong, .drawer-shell .cart-drawer .cross-sell-heading h2, .drawer-shell .cart-drawer .totals p strong) { color: var(--christmas-pine) !important; }
+html[data-winter="on"] :is(.drawer-shell .cart-drawer-header p, .drawer-shell .cart-drawer .cart.compact .cart-row small, .drawer-shell .cart-drawer .totals p) { color: var(--christmas-muted) !important; }
+html[data-winter="on"] :is(.drawer-shell .cart-drawer-heading > svg, .drawer-shell .cart-drawer .cross-sell-heading small, .drawer-shell .cart-drawer .cross-sell-list strong, .drawer-shell .cart-drawer .totals p:last-child strong) { color: var(--christmas-red) !important; }
+html[data-winter="on"] .drawer-shell .cart-drawer-heading > span { background: #f8eeeb; color: var(--christmas-red); }
+html[data-winter="on"] .drawer-shell .cart-drawer .cart.compact :is(.cart-row,.totals) { background: var(--christmas-card); border-color: var(--christmas-border) !important; }
+html[data-winter="on"] .drawer-shell .cart-drawer .cart.compact .quantity { background: #eef4ee !important; border-color: var(--christmas-border); }
+html[data-winter="on"] .drawer-shell .cart-drawer .cart.compact .quantity button { color: var(--christmas-red) !important; }
+html[data-winter="on"] .drawer-shell .cart-drawer .cart.compact .quantity span { color: var(--christmas-pine) !important; }
+html[data-winter="on"] .drawer-shell .cart-drawer .totals p:last-child { background: #e8eee4; color: var(--christmas-pine) !important; }
+html[data-winter="on"] .drawer-shell .cart-drawer .cart.compact > .button.primary.full { background: var(--christmas-red) !important; box-shadow: 0 14px 26px #7f26302d; }
+html[data-winter="on"] .configurator-shell { --surface: var(--christmas-card); --surface-elevated: #eef5ef; --border: var(--christmas-border); --foreground: var(--christmas-pine); --accent: var(--christmas-red); }
+html[data-winter="on"] .configurator-shell .product-configurator,
+html[data-winter="on"] .configurator-shell .product-configurator footer { background: var(--christmas-card); border-color: var(--christmas-border); color: var(--christmas-pine); }
+html[data-winter="on"] .configurator-shell .product-configurator :is(h2,strong) { color: var(--christmas-pine); }
+html[data-winter="on"] .configurator-shell :is(.product-configurator header p, .configurator-field > span, .configurator-addons legend) { color: var(--christmas-red); }
+html[data-winter="on"] .configurator-shell .configurator-addons label,
+html[data-winter="on"] .configurator-shell .configurator-field select { background: #eef5ef; border-color: var(--christmas-border); color: var(--christmas-pine); }
+html[data-winter="on"] .configurator-shell .configurator-addons label:has(input:checked) { background: #f8eeeb; border-color: var(--christmas-red); }
+html[data-winter="on"] .configurator-shell .configurator-addons input { accent-color: var(--christmas-red); }
+html[data-winter="on"] .configurator-shell .configurator-close { background: #edf4ef; border-color: var(--christmas-border); color: var(--christmas-pine); }
+html[data-winter="on"] .configurator-shell .configurator-total strong { color: var(--christmas-red); }
+html[data-winter="on"] .configurator-shell .button.primary { background: var(--christmas-red) !important; border-color: var(--christmas-red) !important; color: white; }
+html[data-winter="on"] :is(.urban-footer, .home-footer, .site-footer) { background: #153f39; border-color: #356f61; }
+html[data-winter="on"] :is(.urban-footer, .home-footer, .site-footer) :is(h2,h3,h4,strong,a) { color: #fffdfa !important; }
+html[data-winter="on"] :is(.urban-footer, .home-footer, .site-footer) :is(p,small,span) { color: #d8e8dc; }
+html[data-winter="on"] body::before,
+html[data-winter="on"] body::after { z-index: 200; opacity: .85; mask-image: none; will-change: transform; }
+html[data-winter="on"] body::before { background-image: radial-gradient(circle, #ffffff 0 2px, #9eb9be 2.5px, transparent 3.5px), radial-gradient(circle, #ffffff 0 1.5px, transparent 2.5px); background-size: 145px 160px, 230px 270px; animation: christmas-snow-fall 17s linear infinite; }
+html[data-winter="on"] body::after { background-image: radial-gradient(circle, #ffffff 0 3px, #9eb9be 3.4px, transparent 4.2px), radial-gradient(circle, #ffffff 0 2px, transparent 3px); background-size: 260px 280px, 185px 220px; animation: christmas-snow-fall 26s linear infinite reverse; }
+@keyframes christmas-snow-fall { from { transform: translate3d(0,-100vh,0); } to { transform: translate3d(24px,100vh,0); } }
+@media (max-width: 760px) {
+  html[data-winter="on"] .urban-nav { background: #f4faf8; }
+  html[data-winter="on"] .product-shell .product-page { padding-inline: 18px; }
+}
+@media (max-width: 640px) {
+  html[data-winter="on"] .urban-home .urban-hero-visual::after { background: linear-gradient(180deg,#e9f3ee 0%,#e9f3ee 24%,#e9f3eee9 37%,#e9f3eeb8 49%,#e9f3ee12 70%,#e9f3ee 100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-winter="on"] body::before { animation: christmas-snow-fall 30s linear infinite; opacity: .52; }
+  html[data-winter="on"] body::after { animation: christmas-snow-fall 42s linear infinite reverse; opacity: .52; }
+}

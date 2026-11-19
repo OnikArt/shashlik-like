@@ -22,7 +22,7 @@
   --urban-layer-header: 100;
   --urban-layer-popover: 120;
 }
-.urban-home, .urban-header { font-family: "Geologica", system-ui, sans-serif; }
+.urban-home, .urban-header { font-family: "Onest", "Geologica", system-ui, sans-serif; }
 .urban-home { background: var(--urban-paper); color: var(--urban-ink); }
 .urban-home * { box-sizing: border-box; }
 .urban-home :is(a,button), .urban-header :is(a,button) { -webkit-tap-highlight-color: transparent; }
@@ -50,7 +50,9 @@
 .urban-brand img { display: block; width: 82px; height: 82px; object-fit: contain; border-radius: 50%; }
 .urban-nav { display: flex; align-items: center; justify-content: center; flex: 1; gap: clamp(10px, 1.55vw, 27px); }
 .urban-nav > a { padding: .65rem .1rem; border-bottom: 2px solid transparent; color: var(--urban-ink); font-size: .89rem; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.urban-nav > a { line-height: 1.35; }
 .urban-nav > a:hover, .urban-nav > a.active { border-color: var(--urban-orange); color: #a93b20; }
+.urban-nav > a.active { padding-inline: .85rem; border: 0; border-radius: 999px; background: var(--urban-orange); color: #fff; }
 .urban-header-actions { display: flex; align-items: center; gap: 8px; }
 .urban-icon-button, .urban-cart-button { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: .5rem; border: 1px solid var(--urban-line); border-radius: 999px; background: var(--urban-paper); color: var(--urban-ink); cursor: pointer; text-decoration: none; transition: background var(--urban-motion), border-color var(--urban-motion), transform var(--urban-motion); }
 .urban-icon-button:hover, .urban-cart-button:hover { border-color: var(--urban-orange); background: var(--urban-cream); color: var(--urban-ink); }

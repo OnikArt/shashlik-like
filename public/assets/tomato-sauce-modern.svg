@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" role="img" aria-label="Томатный соус">
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#f8e9dc"/><stop offset="1" stop-color="#e9c6ae"/></linearGradient><linearGradient id="bowl" y2="1" x2=".2"><stop stop-color="#c5a28d"/><stop offset="1" stop-color="#654334"/></linearGradient><radialGradient id="red"><stop stop-color="#f34725"/><stop offset=".68" stop-color="#d92c16"/><stop offset="1" stop-color="#a62011"/></radialGradient><filter id="shadow"><feGaussianBlur stdDeviation="14"/></filter></defs>
+  <rect width="600" height="600" fill="url(#bg)"/>
+  <ellipse cx="300" cy="455" rx="205" ry="43" fill="#4e2b1d" opacity=".24" filter="url(#shadow)"/>
+  <path d="M104 286c5 95 30 166 72 179 80 35 178 35 249 0 45-18 65-93 72-179" fill="url(#bowl)"/>
+  <ellipse cx="300" cy="287" rx="197" ry="104" fill="#634436"/>
+  <ellipse cx="300" cy="277" rx="174" ry="82" fill="url(#red)"/>
+  <path d="M178 286c39-36 107-43 152-14 40 26 74 16 101-7" fill="none" stroke="#ff7651" stroke-width="14" stroke-linecap="round" opacity=".72"/>
+  <path d="M246 241c40 12 65 13 104-1" fill="none" stroke="#b82514" stroke-width="9" stroke-linecap="round"/>
+  <path d="M294 240c-20-15-21-34-5-47 17 15 19 32 5 47Z" fill="#28764b"/><path d="M298 237c4-23 21-30 40-20-5 19-17 27-40 20Z" fill="#398c52"/><path d="M299 237c-22-8-36-3-43 13 20 6 35 2 43-13Z" fill="#4d9d5a"/>
+  <circle cx="208" cy="296" r="3" fill="#ffc879"/><circle cx="381" cy="258" r="4" fill="#ffc879"/>
+</svg>

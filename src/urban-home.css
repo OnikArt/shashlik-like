@@ -3,7 +3,7 @@
 .urban-hero-copy { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: clamp(36px, 5vw, 92px) max(28px, calc((100vw - 1450px) / 2)); padding-right: clamp(28px, 4vw, 70px); }
 .urban-eyebrow { display: flex; align-items: center; gap: .6rem; margin: 0 0 1.25rem; color: #9d3a20; font-size: .75rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
 .urban-eyebrow span { width: 9px; height: 9px; border-radius: 50%; background: var(--urban-orange); }
-.urban-hero h1, .urban-home h2, .urban-home h3 { font-family: "Geologica", system-ui, sans-serif; }
+.urban-hero h1, .urban-home h2, .urban-home h3 { font-family: "Onest", "Geologica", system-ui, sans-serif; }
 .urban-hero h1 { max-width: 11ch; margin: 0; font-size: clamp(3.5rem, 5.5vw, 6.4rem); font-weight: 700; line-height: .98; letter-spacing: -.055em; }
 .urban-hero h1 em, .urban-story h2 em { color: var(--urban-orange); font-style: normal; }
 .urban-hero-lead { max-width: 43ch; margin: 1.8rem 0; color: #47423e; font-size: clamp(1.05rem, 1.45vw, 1.4rem); line-height: 1.55; }
@@ -78,4 +78,124 @@
   .urban-category img { right: -10%; bottom: -18%; width: 60%; height: 57%; opacity: .82; }
   .urban-category > svg { margin-top: auto; }
   .urban-product-info p { line-height: 1.55; }
+}
+
+/* Reference homepage composition */
+.urban-home { background: #fff7ef; }
+.urban-home .urban-hero { min-height: 555px; grid-template-columns: 1fr; background: #faeee3; }
+.urban-home .urban-hero-copy { width: min(100% - 96px, 1450px); margin: 0 auto; padding: 42px 0 44px; }
+.urban-home .urban-hero-visual { position: absolute; inset: 0; z-index: -1; min-height: 0; background: #faeee3; }
+.urban-home .urban-hero-visual img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.urban-home .urban-hero-visual::after { background: linear-gradient(90deg, #faeee3 0%, #faeee3dc 30%, #faeee300 63%); }
+.urban-home .urban-hero h1 { max-width: 11ch; font-size: clamp(3.5rem, 6.3vw, 6.3rem); line-height: .95; letter-spacing: -.06em; }
+.urban-home .urban-hero h1 em { display: inline-block; position: relative; color: #e94d0c; white-space: nowrap; }
+.urban-home .urban-hero h1 em::after { content: ""; position: absolute; left: 23%; right: 23%; bottom: -.12em; height: .055em; border-radius: 50%; background: #e94d0c; transform: rotate(-3deg); }
+.urban-home .urban-hero-lead { width: 32ch; max-width: 47%; margin: 30px 0 24px; font-size: clamp(1rem, 1.25vw, 1.25rem); font-weight: 400; }
+.urban-home .urban-hero-benefits { margin-top: 42px; }
+.urban-home .urban-hero-benefits span { max-width: 130px; }
+.urban-home .urban-section { width: min(100% - 96px, 1450px); padding-block: 36px; }
+.urban-home .urban-heading { margin-bottom: 22px; }
+.urban-home .urban-heading h2,
+.urban-home .urban-reasons h2 { font-size: clamp(2.3rem, 3.6vw, 3.8rem); font-weight: 750; }
+.urban-home .urban-category-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.urban-home .urban-category { justify-content: flex-end; min-height: 145px; padding: 20px 24px; border: 0; border-radius: 24px; background: #241811; color: white; isolation: isolate; }
+.urban-home .urban-category::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(0deg, #180f0bea, #180f0b00 80%); }
+.urban-home .urban-category img { z-index: -2; inset: 0; width: 100%; height: 100%; border-radius: 0; object-fit: cover; transform: none; }
+.urban-home .urban-category:hover img { transform: scale(1.04); }
+.urban-home .urban-category-copy { z-index: 1; display: grid; gap: 4px; max-width: 75%; }
+.urban-home .urban-category strong { max-width: none; font-size: 1.15rem; }
+.urban-home .urban-category small { font-size: .8rem; }
+.urban-home .urban-category small { font-size: .875rem; line-height: 1.35; }
+.urban-home .urban-category-arrow { position: absolute; right: 18px; bottom: 18px; z-index: 2; display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: #fff; color: #241811; }
+.urban-home .urban-promo { display: flex; align-items: center; gap: 24px; width: min(100% - 80px, 1470px); min-height: 110px; padding: 22px 35px; border-radius: 28px; background: linear-gradient(90deg, #21130d 0%, #21130de0 50%, #21130d55 100%), url('/assets/cinematic-grill-optimized.jpg') center 52% / cover; }
+.urban-home .urban-promo > svg { flex: 0 0 auto; color: #ff5a0e; }
+.urban-home .urban-promo h2 { flex: 0 0 210px; font-size: 1.8rem; font-style: italic; line-height: .94; text-transform: uppercase; }
+.urban-home .urban-promo h2 em { display: block; color: #ff5a0e; }
+.urban-home .urban-promo p { flex: 1; max-width: 290px; margin: 0; color: #fff; }
+.urban-home .urban-promo .urban-link-button { flex: 0 0 auto; border: 0; border-radius: 999px; }
+.urban-home .urban-reasons { display: grid; grid-template-columns: 1fr 2fr; align-items: center; gap: 28px; }
+.urban-home .urban-reasons-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.urban-home .urban-reasons-grid > div { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 12px; min-height: 115px; padding: 16px; border: 1px solid #fff; border-radius: 24px; background: #fffaf5; text-align: center; box-shadow: 0 9px 24px #51301b0a; }
+.urban-home .urban-reasons-grid svg { width: 29px; height: 29px; color: #ef530e; stroke-width: 1.7; }
+.urban-home .urban-reasons-grid strong { font-size: .875rem; line-height: 1.35; }
+.urban-home .urban-story { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 7%; padding: 0 0 22px; border: 0; }
+.urban-home .urban-story > img { width: 100%; height: 250px; object-fit: cover; border-radius: 26px; }
+.urban-home .urban-story h2 { max-width: none; font-size: clamp(2rem, 3vw, 3.2rem); }
+.urban-home .urban-story > div > p:not(.urban-eyebrow) { max-width: 46ch; line-height: 1.5; }
+.urban-home .urban-story .urban-link-button { margin-top: 12px; border-radius: 999px; }
+@media (max-width: 900px) {
+  .urban-home .urban-hero-copy, .urban-home .urban-section { width: min(100% - 48px, 1450px); }
+  .urban-home .urban-hero-visual img { object-position: 62% center; }
+  .urban-home .urban-category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .urban-home .urban-reasons { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .urban-home .urban-hero { min-height: 0; }
+  .urban-home .urban-hero-copy { width: min(100% - 40px, 1450px); padding: 42px 0 310px; }
+  .urban-home .urban-hero-visual { inset: auto 0 0; height: 310px; min-height: 310px; }
+  .urban-home .urban-hero-visual img { object-position: 72% bottom; }
+  .urban-home .urban-hero-visual::after { background: linear-gradient(180deg, #faeee3 0%, #faeee3 44%, #faeee300 72%); }
+  .urban-home .urban-hero h1 { max-width: 100%; font-size: clamp(2.55rem, 11vw, 4.5rem); }
+  .urban-home .urban-hero-lead { max-width: 33ch; width: auto; margin: 26px 0 20px; }
+  .urban-home .urban-hero-actions { flex-direction: row; width: auto; }
+  .urban-home .urban-hero-actions a { width: auto; flex: 1 1 45%; padding-inline: 12px; font-size: .875rem; }
+  .urban-home .urban-hero-benefits { gap: 8px; margin-top: 30px; }
+  .urban-home .urban-hero-benefits span { max-width: 31%; font-size: .8rem; }
+  .urban-home .urban-section { width: min(100% - 40px, 1450px); padding-block: 32px; }
+  .urban-home .urban-heading { align-items: flex-end; flex-direction: row; }
+  .urban-home .urban-heading h2 { font-size: 2.1rem; }
+  .urban-home .urban-heading a { font-size: .875rem; white-space: normal; text-align: right; }
+  .urban-home .urban-category { min-height: 170px; padding: 14px; }
+  .urban-home .urban-category-copy { max-width: 75%; }
+  .urban-home .urban-category strong { font-size: 1rem; }
+  .urban-home .urban-category-arrow { right: 10px; bottom: 10px; width: 30px; height: 30px; }
+  .urban-home .urban-promo { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; width: min(100% - 40px, 1450px); padding: 22px; }
+  .urban-home .urban-promo h2 { flex: auto; font-size: 1.5rem; }
+  .urban-home .urban-promo p, .urban-home .urban-promo .urban-link-button { grid-column: 1 / -1; }
+  .urban-home .urban-reasons-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .urban-home .urban-story { grid-template-columns: 1fr; gap: 24px; }
+  .urban-home .urban-story > img { height: 220px; }
+}
+
+/* Home checkpoint: one continuous, warm hero and a compact commerce rhythm. */
+.urban-hero { position: relative; grid-template-columns: minmax(0, .93fr) minmax(0, 1.07fr); min-height: 620px; isolation: isolate; background: #faf1e8; }
+.urban-hero-copy { position: relative; z-index: 2; padding-block: clamp(60px, 7vw, 110px); }
+.urban-hero h1 { max-width: 11ch; font-size: clamp(3.6rem, 5.8vw, 6.8rem); font-weight: 750; font-style: italic; text-transform: uppercase; }
+.urban-hero-lead { max-width: 38ch; }
+.urban-hero-visual { min-height: 620px; background: #ead5c2; }
+.urban-hero-visual::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, #faf1e8 0%, #faf1e800 29%); pointer-events: none; }
+.urban-hero-visual img { object-position: 56% center; }
+.urban-hero-benefits { display: flex; flex-wrap: wrap; gap: 20px; margin-top: clamp(40px, 5vw, 76px); }
+.urban-hero-benefits span { display: flex; align-items: center; gap: 9px; max-width: 150px; font-size: .84rem; font-weight: 650; line-height: 1.25; }
+.urban-hero-benefits svg { flex: 0 0 27px; width: 27px; height: 27px; color: var(--urban-orange); stroke-width: 1.8; }
+.urban-home .urban-section { padding-block: clamp(58px, 6vw, 92px); }
+.urban-home .urban-favorites { padding-top: 0; }
+.urban-home .urban-heading h2 { text-transform: none; }
+.urban-home .urban-category { border-radius: 24px; background: #f5e9dc; }
+.urban-home .urban-product { border-radius: 22px; box-shadow: 0 12px 30px #3a24100e; }
+.urban-home .urban-promo { min-height: 110px; }
+[data-winter="on"] .urban-home { background: #f5f9fc; color: #193547; }
+[data-winter="on"] .urban-hero { background: #eaf3f8; }
+[data-winter="on"] .urban-hero-visual::after { background: linear-gradient(90deg, #eaf3f8 0%, #eaf3f800 29%); }
+[data-winter="on"] .urban-category,
+[data-winter="on"] .urban-service-options a { background: #eaf3f8; border-color: #c7dbe6; }
+[data-winter="on"] .urban-product { background: #fff; border-color: #c7dbe6; }
+[data-winter="on"] .urban-hero-lead,
+[data-winter="on"] .urban-service-intro > p:last-child { color: #37586a; }
+@media (max-width: 900px) {
+  .urban-hero { min-height: 540px; }
+  .urban-hero-visual { min-height: 540px; }
+  .urban-hero-benefits { gap: 10px; }
+  .urban-hero-benefits span { max-width: 120px; font-size: .75rem; }
+}
+@media (max-width: 640px) {
+  .urban-hero { display: flex; min-height: 0; }
+  .urban-hero-copy { padding: 46px 24px 30px; }
+  .urban-hero h1 { font-size: clamp(2.7rem, 10.8vw, 4.2rem); }
+  .urban-hero-benefits { justify-content: space-between; margin-top: 32px; }
+  .urban-hero-benefits span { flex: 1 1 28%; align-items: flex-start; flex-direction: column; min-width: 88px; }
+  .urban-hero-visual { min-height: 280px; height: 38vh; }
+  .urban-hero-visual::after { background: linear-gradient(180deg, #faf1e8 0%, #faf1e800 26%); }
+  [data-winter="on"] .urban-hero-visual::after { background: linear-gradient(180deg, #eaf3f8 0%, #eaf3f800 26%); }
+  .urban-home .urban-section { padding-block: 54px; }
 }

@@ -1,0 +1,135 @@
+/* The drawer scrolls as one page so every product row stays fully visible. */
+.drawer-shell .drawer-backdrop { background: rgba(28, 19, 15, .5); backdrop-filter: blur(9px); }
+.drawer-shell .cart-drawer {
+  display: block !important;
+  width: min(720px, 100vw) !important;
+  max-width: none !important;
+  height: 100dvh;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  padding: 0 clamp(16px, 3vw, 28px) max(28px, env(safe-area-inset-bottom)) !important;
+  border: 0;
+  border-radius: 30px 0 0 30px;
+  background: #faf7f4;
+  box-shadow: -24px 0 70px rgba(32, 18, 11, .22);
+  color: #211b18;
+  scrollbar-width: thin;
+}
+.drawer-shell .cart-drawer-header {
+  position: relative;
+  display: block;
+  min-height: 150px;
+  margin-inline: calc(-1 * clamp(16px, 3vw, 28px));
+  padding: 34px 80px 27px clamp(16px, 3vw, 28px) !important;
+  overflow: hidden;
+  border: 0;
+  background: linear-gradient(90deg,#faf7f4 4%,rgba(250,247,244,.96) 48%,rgba(250,247,244,.2) 88%),url('/assets/chicken-skewer-reference-v1.jpg') 100% 48% / auto 180% no-repeat;
+}
+.drawer-shell .cart-drawer-heading { position: relative; z-index: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 11px; }
+.drawer-shell .cart-drawer-heading > svg { width: 33px; height: 33px; color: #f4510b; stroke-width: 1.8; }
+.drawer-shell .cart-drawer-header h2 { margin: 0; color: #1d1a18; font-size: clamp(2rem, 4.3vw, 3.4rem); font-weight: 820; letter-spacing: -.065em; line-height: 1; text-transform: none; }
+.drawer-shell .cart-drawer-heading > span { padding: 7px 12px; border-radius: 999px; background: #ffe5d8; color: #db4912; font-size: .83rem; font-weight: 780; white-space: nowrap; }
+.drawer-shell .cart-drawer-header p { position: relative; z-index: 1; margin: 12px 0 0; color: #635a56; font-size: .95rem; line-height: 1.4; }
+.drawer-shell .cart-drawer .close { top: 22px; right: 22px; display: grid; place-items: center; width: 48px; height: 48px; margin: 0; border: 1px solid #ebded5; border-radius: 50%; background: rgba(255,255,255,.94); box-shadow: 0 5px 15px rgba(43,28,18,.12); color: #211b18; }
+.drawer-shell .cart-drawer .close:hover { background: #fff0e9; }
+.drawer-shell .cart-drawer .cart.compact {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: visible;
+}
+.drawer-shell .cart-drawer .cart.compact .cart-items {
+  display: grid;
+  flex: 0 0 auto !important;
+  grid-auto-rows: auto;
+  gap: 12px;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 0 1px 4px !important;
+  overflow: visible !important;
+  border: 0;
+}
+.drawer-shell .cart-drawer .cart.compact .cart-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) 92px !important;
+  grid-template-rows: auto;
+  align-items: center;
+  gap: 15px !important;
+  min-height: 136px;
+  padding: 14px !important;
+  overflow: hidden;
+  border: 1px solid #eee4dd !important;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 10px 23px rgba(54, 31, 19, .07);
+}
+.drawer-shell .cart-drawer .cart.compact .cart-row > img { width: 104px !important; height: 104px !important; border-radius: 16px !important; object-fit: cover; }
+.drawer-shell .cart-drawer .cart.compact .cart-row > div:nth-child(2) { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; min-width: 0; }
+.drawer-shell .cart-drawer .cart.compact .cart-row strong { color: #221c19 !important; font-size: 1.08rem; font-weight: 790; line-height: 1.2; overflow-wrap: anywhere; }
+.drawer-shell .cart-drawer .cart.compact .cart-row small { color: #6e625c; font-size: .82rem; line-height: 1.3; }
+.drawer-shell .cart-drawer .cart.compact .quantity { display: grid; grid-template-columns: 36px minmax(64px,auto) 36px; width: max-content; max-width: 100%; min-height: 40px; margin-top: 8px; border: 1px solid #f1d8c9; border-radius: 999px; background: #fff7f2 !important; overflow: hidden; }
+.drawer-shell .cart-drawer .cart.compact .quantity button { height: 40px; border: 0; background: transparent; color: #e84b0b !important; font-size: 1.2rem; }
+.drawer-shell .cart-drawer .cart.compact .quantity span { border: 0; color: #211b18 !important; font-size: .86rem; font-weight: 780; }
+.drawer-shell .cart-drawer .cart.compact .cart-row-end { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; min-width: 0; }
+.drawer-shell .cart-drawer .cart.compact .cart-row-end > strong { font-size: 1.1rem; white-space: nowrap; }
+.drawer-shell .cart-drawer .cart.compact .cart-row-end button { width: 38px; height: 38px; padding: 0; border: 1px solid #f1d8d2; border-radius: 12px; background: #fff3f0; color: #dc4a26; }
+.drawer-shell .cart-drawer .cart.compact .cart-row-end button:hover { background: #ffe6e0; }
+.drawer-shell .cart-drawer .cart.compact .delivery-progress { display: none; }
+.drawer-shell .cart-drawer .cart.compact .cross-sell { display: block !important; flex: 0 0 auto; margin: 24px 0 0; padding: 18px; border: 1px solid #f4e2d9; border-radius: 24px; background: linear-gradient(120deg,#fff2e9,#fffaf6); }
+.drawer-shell .cart-drawer .cross-sell-heading { margin-bottom: 13px; }
+.drawer-shell .cart-drawer .cross-sell-heading small { color: #e45015; font-size: .7rem; font-weight: 830; letter-spacing: .12em; text-transform: uppercase; }
+.drawer-shell .cart-drawer .cross-sell-heading h2 { margin: 3px 0 0; color: #241b17; font-size: 1.35rem; font-weight: 800; letter-spacing: -.04em; }
+.drawer-shell .cart-drawer .cross-sell-heading > span { display: none; }
+.drawer-shell .cart-drawer .cross-sell-list { display: flex; gap: 10px; overflow-x: auto; padding: 2px 1px 5px; scrollbar-width: none; }
+.drawer-shell .cart-drawer .cross-sell-list::-webkit-scrollbar { display: none; }
+.drawer-shell .cart-drawer .cross-sell-list button { display: grid; flex: 0 0 180px; grid-template-columns: 58px minmax(0,1fr); grid-template-rows: 1fr auto; align-items: center; gap: 3px 8px; width: 180px; min-height: 76px; margin: 0; padding: 8px; border: 1px solid #f2e5db; border-radius: 16px; background: white; color: #251c18; text-align: left; }
+.drawer-shell .cart-drawer .cross-sell-list button:hover { border-color: #ed9d73; transform: translateY(-2px); }
+.drawer-shell .cart-drawer .cross-sell-list img { display: block; grid-row: 1 / 3; width: 58px; height: 58px; border-radius: 11px; object-fit: cover; }
+.drawer-shell .cart-drawer .cross-sell-list span { align-self: end; font-size: .78rem; font-weight: 750; line-height: 1.15; }
+.drawer-shell .cart-drawer .cross-sell-list strong { align-self: start; color: #db4a14; font-size: .8rem; }
+.drawer-shell .cart-drawer .cart.compact .cart-promo { display: grid; gap: 7px; margin: 20px 0 0; }
+.drawer-shell .cart-drawer .cart-promo > label { color: #302721; font-size: .83rem; font-weight: 760; }
+.drawer-shell .cart-drawer .cart-promo > div { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+.drawer-shell .cart-drawer .cart-promo input { min-height: 48px; padding-inline: 15px; border: 1px solid #e6d8d0; border-radius: 14px; background: white; color: #251c18; font-size: .92rem; }
+.drawer-shell .cart-drawer .cart-promo button { min-height: 48px; padding: 0 16px; border: 0; border-radius: 14px; background: #ffe2d2; color: #c9420d; font-weight: 770; }
+.drawer-shell .cart-drawer .cart-promo button:hover { background: #ffd2bb; }
+.drawer-shell .cart-drawer .cart.compact .totals { margin: 16px 0 0 !important; padding: 16px 18px !important; border: 1px solid #eee2db !important; border-radius: 22px !important; background: white; color: #2b231f !important; }
+.drawer-shell .cart-drawer .totals p { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0; padding: 6px 0; color: #4d433d !important; font-size: .92rem; line-height: 1.35; }
+.drawer-shell .cart-drawer .totals p strong { color: #241b17 !important; font-weight: 780; white-space: nowrap; }
+.drawer-shell .cart-drawer .totals p:last-child { margin: 12px 0 0; padding: 15px 16px; border: 0; border-radius: 16px; background: linear-gradient(110deg,#fff0e9,#ffdfce); color: #231b17 !important; font-size: 1.35rem; font-weight: 820; }
+.drawer-shell .cart-drawer .totals p:last-child strong { color: #e8490e !important; font-size: 1.65rem; }
+.drawer-shell .cart-drawer .cart.compact > .button.primary.full { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 100%; min-height: 58px; margin: 17px 0 0; border-radius: 18px; background: linear-gradient(105deg,#ff8d18,#f4470a) !important; box-shadow: 0 14px 26px rgba(231,75,15,.2); color: white; font-size: 1.04rem; font-weight: 800; text-transform: none; }
+.drawer-shell .cart-drawer .cart-security { margin: 12px 0 0; color: #756a64; font-size: .7rem; }
+[data-winter="on"] .drawer-shell .cart-drawer { background: #eff6f9; }
+[data-winter="on"] .drawer-shell .cart-drawer-header { background: linear-gradient(90deg,#eff6f9 4%,rgba(239,246,249,.95) 51%,rgba(239,246,249,.2) 88%),url('/assets/chicken-skewer-reference-v1.jpg') 100% 48% / auto 180% no-repeat; }
+[data-winter="on"] .drawer-shell .cart-drawer .cart.compact .cart-row, [data-winter="on"] .drawer-shell .cart-drawer .cart.compact .totals { border-color: #d4e6ee !important; background: #fbfeff; }
+[data-winter="on"] .drawer-shell .cart-drawer .cart.compact .cross-sell { border-color: #d4e6ee; background: linear-gradient(120deg,#e6f2f7,#f7fbfd); }
+
+@media (max-width: 600px) {
+  .drawer-shell .cart-drawer { border-radius: 0; }
+  .drawer-shell .cart-drawer-header { min-height: 132px; padding-top: 27px !important; padding-bottom: 22px !important; }
+  .drawer-shell .cart-drawer-header p { max-width: 30ch; font-size: .82rem; }
+  .drawer-shell .cart-drawer .cart.compact .cart-row { grid-template-columns: 88px minmax(0,1fr) !important; grid-template-rows: auto auto; gap: 8px 12px !important; min-height: 0; padding: 12px !important; }
+  .drawer-shell .cart-drawer .cart.compact .cart-row > img { grid-row: 1 / 3; width: 88px !important; height: 88px !important; align-self: start; }
+  .drawer-shell .cart-drawer .cart.compact .cart-row > div:nth-child(2) { grid-column: 2; grid-row: 1; }
+  .drawer-shell .cart-drawer .cart.compact .cart-row-end { grid-column: 2; grid-row: 2; flex-direction: row; align-items: center; justify-content: space-between; }
+  .drawer-shell .cart-drawer .cart.compact .cart-row-end > strong { font-size: 1rem; }
+  .drawer-shell .cart-drawer .cart.compact .quantity { grid-template-columns: 32px minmax(58px,auto) 32px; margin-top: 5px; }
+  .drawer-shell .cart-drawer .cart.compact .quantity button { height: 36px; }
+  .drawer-shell .cart-drawer .cart.compact .totals { padding: 13px !important; }
+}
+@media (max-width: 390px) {
+  .drawer-shell .cart-drawer .cart.compact .cart-row { grid-template-columns: 76px minmax(0,1fr) !important; }
+  .drawer-shell .cart-drawer .cart.compact .cart-row > img { width: 76px !important; height: 76px !important; }
+  .drawer-shell .cart-drawer .cart.compact .cart-row strong { font-size: .98rem; }
+  .drawer-shell .cart-drawer .cart-promo > div { grid-template-columns: 1fr; }
+  .drawer-shell .cart-drawer .cart-promo button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-shell .cart-drawer .cross-sell-list button { transition: none; }
+}

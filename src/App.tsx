@@ -33,7 +33,10 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
+  CookingPot,
+  CupSoda,
   Flame,
+  Gift,
   Grid2X2,
   Heart,
   House,
@@ -47,6 +50,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sandwich,
   Snowflake,
   Send,
   ShieldCheck,
@@ -55,10 +59,14 @@ import {
   Star,
   Store,
   Target,
+  ThumbsUp,
   Trash2,
+  Truck,
   UserRound,
   Users,
+  UtensilsCrossed,
   WalletCards,
+  Wheat,
   X,
 } from "lucide-react";
 import { apiFetch, apiUrl } from "./api";
@@ -762,7 +770,9 @@ function useCart(data: Bootstrap | null) {
       (item.option || "") === option &&
       item.addons.slice().sort().join(",") === addons.slice().sort().join(",")
       && JSON.stringify(item.modifiers || []) === JSON.stringify(modifiers)
-      && (item.onionChoice || "") === onionChoice
+      && (productsById.has(productId) && supportsOnionChoice(productsById.get(productId)!)
+        ? (item.onionChoice === "with" ? "with" : "without") === onionChoice
+        : (item.onionChoice || "") === onionChoice)
     );
   }
 
@@ -774,18 +784,19 @@ function useCart(data: Bootstrap | null) {
     modifiers: ModifierSelection[] = [],
     onionChoice: "with" | "without" | "" = "",
   ) {
+    const selectedOnion = supportsOnionChoice(product) ? (onionChoice === "with" ? "with" : "without") : "";
     setItems((current) => {
       const existing = current.find((item) =>
-        sameItem(item, product.id, option, addons, modifiers, onionChoice),
+        sameItem(item, product.id, option, addons, modifiers, selectedOnion),
       );
       if (existing) {
         return current.map((item) =>
-          sameItem(item, product.id, option, addons, modifiers, onionChoice)
+          sameItem(item, product.id, option, addons, modifiers, selectedOnion)
             ? { ...item, quantity: item.quantity + quantity }
             : item,
         );
       }
-      return [...current, { productId: product.id, quantity, option, addons, modifiers, onionChoice }];
+      return [...current, { productId: product.id, quantity, option, addons, modifiers, onionChoice: selectedOnion }];
     });
   }
 
@@ -1684,33 +1695,26 @@ type HomeProps = {
 const homePrimaryPhone = "+7 (909) 211-82-11";
 const phoneHref = (value: string) => `tel:${value.replace(/[^+\d]/g, "")}`;
 
-function HomeReboot({ data, onAdd, cartCount, cartTotal, onCartOpen, activeOrder }: HomeProps) {
-  const { favorites, toggleFavorite } = useFavorites();
-  const [category, setCategory] = useState("all");
+function HomeReboot({ data, cartCount, cartTotal, onCartOpen, activeOrder }: HomeProps) {
   const categories = data.categories.filter((item) => item.isActive !== false && data.products.some((product) => product.isActive && product.categoryId === item.id));
-  const products = data.products.filter((product) => product.isActive && (category === "all" ? product.isFeatured : product.categoryId === category)).slice(0, 6);
-  const firstPoint = data.pickupPoints.find((point) => point.isActive);
   const sitePromo = data.promotions?.find((promotion) => promotion.code === "САЙТ" && promotion.type === "percent" && promotion.amount === 10);
-  const navigate = useNavigate();
   return <div className="urban-home">
     <HomeHeader settings={data.settings} cartCount={cartCount} cartTotal={cartTotal} onCartOpen={onCartOpen} activeOrder={activeOrder} />
     <main>
       <section className="urban-hero" aria-labelledby="urban-home-title">
         <div className="urban-hero-copy">
-          <p className="urban-eyebrow"><span /> Воронеж · вкус на углях</p>
-          <h1 id="urban-home-title">Шашлык,<br /><em>который любят.</em></h1>
-          <p className="urban-hero-lead">Сочные блюда с огня для вашего обеда, ужина и встреч с близкими.</p>
-          <div className="urban-hero-actions"><Link className="urban-link-button urban-link-button--primary" to="/menu">Смотреть меню <ArrowRight size={20} aria-hidden="true" /></Link><Link className="urban-link-button urban-link-button--secondary" to="/delivery">Условия доставки</Link></div>
-          <div className="urban-hero-footnote"><span>01 / 03</span><span>Готовим на углях · доставляем по Воронежу</span></div>
+          <p className="urban-eyebrow"><span />Доставка из мангала по Воронежу</p>
+          <h1 id="urban-home-title">Настоящий<br />шашлык<br /><em>с мангала</em></h1>
+          <p className="urban-hero-lead">Сочные блюда на углях готовим для вас и доставляем по Воронежу.</p>
+          <div className="urban-hero-actions"><Link className="urban-link-button urban-link-button--primary" to="/menu"><span>Заказать сейчас</span><ArrowRight size={20} aria-hidden="true" /></Link><Link className="urban-link-button urban-link-button--secondary" to="/menu"><Grid2X2 size={18} aria-hidden="true" /> Смотреть меню</Link></div>
+          <div className="urban-hero-benefits" aria-label="Преимущества"><span><Flame aria-hidden="true" /><span>Готовим на углях</span></span><span><Truck aria-hidden="true" /><span>Доставка по Воронежу</span></span><span><Leaf aria-hidden="true" /><span>Свежие продукты</span></span></div>
         </div>
-        <div className="urban-hero-visual"><img src="/assets/home-hero-cinematic.webp" alt="Шашлык на шампуре, приготовленный на углях" width="1792" height="1024" fetchPriority="high" /><span>Настоящий вкус рядом</span></div>
+        <div className="urban-hero-visual"><picture><source media="(max-width: 640px)" srcSet="/assets/home-hero-cinematic.webp" /><img src="/assets/home-hero-reference-v2.jpg" alt="Шашлык на шампурах с овощами и картофелем" width="1774" height="887" fetchPriority="high" /></picture></div>
       </section>
-      <section className="urban-section urban-categories" aria-labelledby="urban-categories-title"><div className="urban-heading"><div><p className="urban-eyebrow">Что приготовить сегодня</p><h2 id="urban-categories-title">Выберите по вкусу</h2></div><Link to="/menu">Всё меню <ArrowRight size={18} /></Link></div><div className="urban-category-grid">{categories.slice(0, 6).map((item, index) => { const product = data.products.find((entry) => entry.isActive && entry.categoryId === item.id && entry.imageUrl); return <Link key={item.id} to={`/menu?category=${encodeURIComponent(item.id)}`} className="urban-category"><span className="urban-category-index">0{index + 1}</span><strong>{item.name}</strong>{product && <img src={product.imageUrl} alt="" loading="lazy" decoding="async" />}<ArrowRight size={19} aria-hidden="true" /></Link>; })}</div></section>
-      <section className="urban-section urban-favorites" aria-labelledby="urban-favorites-title"><div className="urban-heading"><div><p className="urban-eyebrow">Выбор гостей</p><h2 id="urban-favorites-title">Популярные блюда</h2></div><Link to="/menu">Перейти в каталог <ArrowRight size={18} /></Link></div><div className="urban-filter" role="group" aria-label="Категории блюд"><UrbanButton tone={category === "all" ? "primary" : "quiet"} onClick={() => setCategory("all")} aria-pressed={category === "all"}>Все</UrbanButton>{categories.slice(0, 5).map((item) => <UrbanButton key={item.id} tone={category === item.id ? "primary" : "quiet"} onClick={() => setCategory(item.id)} aria-pressed={category === item.id}>{item.name}</UrbanButton>)}</div><div className="urban-product-grid">{products.length ? products.map((product) => <article className="urban-product" key={product.id}><Link to={`/product/${product.slug}`} className="urban-product-image"><img src={product.imageUrl} alt={product.name} loading="lazy" decoding="async" /></Link><button type="button" className="urban-product-favorite" aria-label={`${favorites.includes(product.id) ? "Убрать" : "Добавить"} ${product.name} ${favorites.includes(product.id) ? "из" : "в"} избранное`} aria-pressed={favorites.includes(product.id)} onClick={() => toggleFavorite(product.id)}><Heart size={19} fill={favorites.includes(product.id) ? "currentColor" : "none"} /></button><div className="urban-product-info"><Link to={`/product/${product.slug}`}><h3>{product.name}</h3></Link><p>{product.description}</p><div><span><strong>{money(product.price)}</strong><small>{product.unit}</small></span>{product.options?.length || product.addonIds?.length ? <Link className="urban-product-add" to={`/product/${product.slug}`} aria-label={`Выбрать ${product.name}`}><Plus size={20} /></Link> : <button type="button" className="urban-product-add" disabled={!product.isAvailable} onClick={() => onAdd(product, product.step || 1)} aria-label={`Добавить ${product.name} в корзину`}><Plus size={20} /></button>}</div></div></article>) : <p className="urban-empty">В этой категории пока нет блюд. Посмотрите весь каталог.</p>}</div></section>
-      <section className="urban-section urban-service" aria-labelledby="urban-service-title"><div className="urban-service-intro"><p className="urban-eyebrow">Как вам удобно</p><h2 id="urban-service-title">Ваш заказ.<br />Ваши правила.</h2><p>Заберите блюда в киоске или оформите доставку. Условия и стоимость указаны до подтверждения заказа.</p></div><div className="urban-service-options"><Link to="/delivery"><span>01</span><Bike size={27} /><h3>Доставка</h3><p>Любимые блюда привезём по Воронежу.</p><ArrowRight size={20} /></Link><Link to="/pickup"><span>02</span><Store size={27} /><h3>Самовывоз</h3><p>{firstPoint ? `Заберите заказ: ${firstPoint.address}.` : "Выберите удобный киоск."}</p><ArrowRight size={20} /></Link></div></section>
-      {sitePromo && <section className="urban-promo" aria-labelledby="urban-promo-title"><div><p className="urban-eyebrow">Предложение на сайте</p><h2 id="urban-promo-title">Вкуснее вместе<br />со скидкой 10%</h2><p>Используйте промокод «САЙТ» при оформлении заказа.</p><UrbanButton onClick={() => { sessionStorage.setItem("shashlik-promo", "САЙТ"); window.dispatchEvent(new Event("shashlik-promo-change")); navigate("/menu"); }}>Выбрать блюда <ArrowRight size={18} /></UrbanButton></div><img src="/assets/shashlik-hero-optimized.jpg" alt="Шашлык на шампурах" loading="lazy" decoding="async" /></section>}
-      <section className="urban-section urban-locations" aria-labelledby="urban-locations-title"><div className="urban-locations-image"><img src="/assets/home-kiosk-evening.webp" alt="Киоск Шашлык Лайк вечером" loading="lazy" decoding="async" /></div><div><p className="urban-eyebrow">Рядом с вами</p><h2 id="urban-locations-title">Заходите<br />за вкусным.</h2><p>{firstPoint ? `${firstPoint.address} — одна из наших точек в Воронеже.` : "Найдите удобный киоск в Воронеже."}</p><Link className="urban-link-button urban-link-button--secondary" to="/pickup">Посмотреть киоски <ArrowRight size={18} /></Link></div></section>
-      <section className="urban-section urban-story" aria-labelledby="urban-story-title"><p className="urban-eyebrow">О нас</p><h2 id="urban-story-title">Две сети.<br /><em>Одна любовь к вкусу.</em></h2><p>Шашлык Лайк × ШашлычОК — блюда на углях, знакомые вкусы и удобный способ заказать их рядом с вами.</p><Link to="/about">Узнать о нас <ArrowRight size={18} /></Link></section>
+      <section className="urban-section urban-categories" aria-labelledby="urban-categories-title"><div className="urban-heading"><div><p className="urban-eyebrow">Выбери свой вкус</p><h2 id="urban-categories-title">Наше меню</h2></div><Link to="/menu">Смотреть всё меню <ArrowRight size={18} /></Link></div><div className="urban-category-grid">{categories.slice(0, 4).map((item) => { const product = data.products.find((entry) => entry.isActive && entry.categoryId === item.id && entry.imageUrl); return <Link key={item.id} to={`/menu?category=${encodeURIComponent(item.id)}`} className="urban-category">{product && <img src={product.imageUrl} alt="" loading="lazy" decoding="async" />}<span className="urban-category-copy"><strong>{item.name}</strong>{item.minPrice && <small>{item.minPrice}</small>}</span><span className="urban-category-arrow"><ArrowRight size={19} aria-hidden="true" /></span></Link>; })}</div></section>
+      {sitePromo && <section className="urban-promo" aria-labelledby="urban-promo-title"><Gift size={40} aria-hidden="true" /><h2 id="urban-promo-title">Выгодные <em>акции</em></h2><p>Актуальные предложения для вашего заказа</p><Link className="urban-link-button urban-link-button--secondary" to="/promotions">Смотреть акции <ArrowRight size={18} /></Link></section>}
+      <section className="urban-section urban-reasons" aria-labelledby="urban-reasons-title"><div><p className="urban-eyebrow">Нам доверяют</p><h2 id="urban-reasons-title">Почему<br />выбирают нас</h2></div><div className="urban-reasons-grid"><div><span className="urban-reason-number">01 / ОГОНЬ</span><Flame aria-hidden="true" /><strong>Настоящий мангал</strong><small>Готовим на углях, а не на конвейере.</small></div><div><span className="urban-reason-number">02 / ВКУС</span><Beef aria-hidden="true" /><strong>Блюда на углях</strong><small>Сочный вкус в каждом заказе.</small></div><div><span className="urban-reason-number">03 / СЕРВИС</span><Clock3 aria-hidden="true" /><strong>Удобный заказ</strong><small>От выбора блюда до получения.</small></div><div><span className="urban-reason-number">04 / ГОРОД</span><Heart aria-hidden="true" /><strong>Любимый вкус Воронежа</strong><small>Для тех, кто любит по-настоящему.</small></div></div></section>
+      <section className="urban-section urban-story" aria-labelledby="urban-story-title"><img src="/assets/cinematic-grill-optimized.jpg" alt="Шашлык готовится на мангале" loading="lazy" decoding="async" /><div><p className="urban-eyebrow">О нас</p><h2 id="urban-story-title">Шашлык Лайк —<br />больше, чем еда</h2><p>Готовим блюда на углях и делаем заказ удобным для вас.</p><Link className="urban-link-button urban-link-button--secondary" to="/about">Узнать больше <ArrowRight size={18} /></Link></div></section>
     </main><HomeFooter settings={data.settings} />
   </div>;
 }
@@ -2086,7 +2090,17 @@ function HomeHeader({
       document.removeEventListener("pointerdown", onPointerDown);
     };
   }, [phonesOpen]);
+  useEffect(() => {
+    if (!open || window.innerWidth > 760) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", closeOnEscape); };
+  }, [open]);
+  useEffect(() => { setOpen(false); }, [location.pathname]);
   const navigation = [
+    ["Главная", "/"],
     ["Меню", "/menu"],
     ["Акции", "/promotions"],
     ["Доставка", "/delivery"],
@@ -2109,6 +2123,7 @@ function HomeHeader({
             className={open ? "urban-nav open" : "urban-nav"}
             aria-label="Навигация по сайту"
           >
+            <div className="urban-nav-mobile-heading"><span>ШАШЛЫК ЛАЙК / ВОРОНЕЖ</span><strong>Куда отправимся?</strong></div>
             {navigation.map(([label, href]) => (
               <Link
                 className={(activePath || location.pathname) === href ? "active" : ""}
@@ -2518,7 +2533,7 @@ function KioskShowcase({
                       key={point.id}
                     >
                       <div className="kiosk-card-photo">
-                        {point.imageUrl ? <img src={point.imageUrl} alt={`Изображение точки: ${point.address}`} width="1600" height="800" loading="lazy" decoding="async" /> : <div className="kiosk-image-placeholder"><Store aria-hidden="true" /><span>Фото точки пока не добавлено</span></div>}
+                        {point.imageUrl ? <img src={point.imageUrl} alt={`Изображение точки: ${point.address}`} width="1600" height="800" loading="lazy" decoding="async" /> : <div className="kiosk-image-placeholder"><span className="kiosk-placeholder-kicker">ШАШЛЫК ЛАЙК / ВОРОНЕЖ</span><Store aria-hidden="true" /><strong>Ваша точка<br />самовывоза</strong><span>Готовим на углях. Забирайте рядом.</span></div>}
                         <span>
                           {index + 1} / {points.length}
                         </span>
@@ -2767,7 +2782,7 @@ function HomeFooter({ settings }: { settings: Settings }) {
         <div>
           <Link className="home-brand" to="/">
             <span className="home-brand-mark">
-              <Flame />
+              <ThumbsUp />
             </span>
             <span>
               <strong>
@@ -2895,11 +2910,6 @@ function Menu({
     active === "all"
       ? categories
       : categories.filter((category) => category.id === active);
-  const featuredProducts = (
-    activeProducts.filter((product) => product.isFeatured).length
-      ? activeProducts.filter((product) => product.isFeatured)
-      : activeProducts
-  ).slice(0, 3);
 
   useEffect(() => {
     if (active !== "all") trackEvent("category_view", { categoryId: active });
@@ -2907,10 +2917,27 @@ function Menu({
 
   const chooseCategory = (categoryId: string) => {
     setParams(categoryId === "all" ? {} : { category: categoryId }, { preventScrollReset: true });
+    window.requestAnimationFrame(() => {
+      document.querySelector(".menu-catalog")?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      });
+    });
   };
   const categoryImage = (categoryId: string) =>
     activeProducts.find((product) => product.categoryId === categoryId)
       ?.imageUrl || "/assets/placeholder.svg";
+  const categoryIcons: Record<string, ReactNode> = {
+    shashlik: <Beef aria-hidden="true" />,
+    shawarma: <Sandwich aria-hidden="true" />,
+    doner: <Sandwich aria-hidden="true" />,
+    lyulya: <UtensilsCrossed aria-hidden="true" />,
+    fajitas: <Flame aria-hidden="true" />,
+    sauces: <CookingPot aria-hidden="true" />,
+    bread: <Wheat aria-hidden="true" />,
+    drinks: <CupSoda aria-hidden="true" />,
+    combo: <Gift aria-hidden="true" />,
+  };
 
   return (
     <div className={`menu-shell${active !== "all" ? " category-filtered" : ""}`}>
@@ -2926,7 +2953,7 @@ function Menu({
       <section className="menu-hero" aria-labelledby="menu-title">
         <div className="menu-hero-media" aria-hidden="true">
           <img
-            src="/assets/home-hero-cinematic.webp"
+            src="/assets/chicken-skewer-reference-v1.jpg"
             alt=""
             width="1792"
             height="1024"
@@ -2936,42 +2963,25 @@ function Menu({
         </div>
         <div className="menu-hero-inner home-container">
           <div className="menu-hero-copy">
-            <nav className="menu-breadcrumb" aria-label="Хлебные крошки">
-              <Link to="/">Главная</Link>
-              <ChevronRight />
-              <span>Меню</span>
-            </nav>
+            <span className="menu-hero-kicker">Настоящий вкус на углях</span>
             <h1 id="menu-title">
-              Наше <strong>меню</strong>
+              Меню
             </h1>
             <p>
-              Сочный шашлык, фирменные блюда и закуски: всё, что вы любите, в
-              одном месте.
+              Шашлыки, шаурма, донеры и многое другое — готовим на углях и доставляем по Воронежу.
             </p>
             <div className="menu-hero-benefits" aria-label="Преимущества">
               <span>
                 <Flame />
-                <small>
-                  <b>Настоящий</b> вкус на углях
-                </small>
-              </span>
-              <span>
-                <Leaf />
-                <small>
-                  <b>Свежие</b> продукты
-                </small>
+                <small>На углях</small>
               </span>
               <span>
                 <Bike />
-                <small>
-                  <b>Быстрая</b> доставка
-                </small>
+                <small>Быстрая доставка</small>
               </span>
               <span>
-                <Store />
-                <small>
-                  <b>Проверенные</b> рецепты
-                </small>
+                <Leaf />
+                <small>Свежие продукты</small>
               </span>
             </div>
             <label className="menu-search menu-search-mobile">
@@ -2992,37 +3002,26 @@ function Menu({
         className="menu-mobile-categories home-container"
         aria-labelledby="mobile-categories-title"
       >
-        <div className="menu-mobile-section-head">
-          <h2 id="mobile-categories-title">Категории</h2>
-          <button type="button" onClick={() => chooseCategory("all")}>
-            Смотреть все <ArrowRight />
-          </button>
-        </div>
+        <h2 id="mobile-categories-title" className="sr-only">Категории меню</h2>
         <div className="menu-mobile-category-list">
-          {categories.map((category, index) => {
+          <button type="button" className={active === "all" ? "active" : ""} onClick={() => chooseCategory("all")} aria-pressed={active === "all"}>
+            <Grid2X2 aria-hidden="true" /><strong>Всё меню</strong>
+          </button>
+          {categories.map((category) => {
             const count = activeProducts.filter(
               (product) => product.categoryId === category.id,
             ).length;
             return (
               <button
                 type="button"
-                className={
-                  active === category.id || (active === "all" && index === 0)
-                    ? "active"
-                    : ""
-                }
+                className={active === category.id ? "active" : ""}
                 key={category.id}
                 onClick={() => chooseCategory(category.id)}
+                aria-pressed={active === category.id}
               >
-                <img
-                  src={categoryImage(category.id)}
-                  alt=""
-                  width="80"
-                  height="80"
-                  loading="lazy"
-                />
+                {categoryIcons[category.id] || <ChefHat aria-hidden="true" />}
                 <strong>{category.name}</strong>
-                <span>{category.id === "combo" && count === 0 ? "Скоро" : count}</span>
+                <span className="sr-only">{category.id === "combo" && count === 0 ? "Скоро" : `${count} товаров`}</span>
               </button>
             );
           })}
@@ -3131,37 +3130,11 @@ function Menu({
             </div>
           </div>
 
-          {active === "all" && !normalizedQuery && (
-            <section
-              className="menu-mobile-popular"
-              aria-labelledby="mobile-popular-title"
-            >
-              <div className="menu-product-section-head">
-                <div>
-                  <span>Выбор гостей</span>
-                  <h2 id="mobile-popular-title">Популярное</h2>
-                </div>
-              </div>
-              <div className="menu-product-grid featured">
-                {featuredProducts.map((product) => (
-                  <ProductCard
-                    key={`featured-${product.id}`}
-                    product={product}
-                    data={data}
-                    onAdd={onAdd}
-                    favorite={favorites.includes(product.id)}
-                    onFavorite={toggleFavorite}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
           {visibleCategories.map((category) => {
             const categoryProducts = sortedProducts.filter(
               (product) => product.categoryId === category.id,
             );
-            if (!categoryProducts.length && category.id !== "combo") return null;
+            if (!categoryProducts.length && (category.id !== "combo" || normalizedQuery)) return null;
             return (
               <section
                 className={`menu-products-section category-${category.id}`}
@@ -3175,13 +3148,13 @@ function Menu({
                     </span>
                     <h2>{category.name}</h2>
                   </div>
-                  <small>
-                    {categoryProducts.length}{" "}
-                    {categoryProducts.length === 1 ? "блюдо" : "позиций"}
-                  </small>
+                  <button type="button" className="menu-section-view-all" onClick={() => chooseCategory(category.id)}>Смотреть все <ArrowRight size={20} /></button>
                 </div>
                 {category.id === "combo" && !categoryProducts.length ? (
-                  <div className="combo-coming-soon" role="status"><span>Сеты</span><h3>Скоро появятся</h3><p>Здесь будут готовые сеты. Пока выбирайте любимые блюда из меню.</p><button type="button" onClick={() => chooseCategory("all")}>Посмотреть меню <ArrowRight size={18} /></button></div>
+                  <div className="combo-coming-soon" role="status">
+                    <div className="combo-coming-soon-copy"><span>Новая категория</span><h3>Сеты <em>скоро</em></h3><p>Готовим наборы для компании. Пока соберите свой заказ из любимых блюд.</p><button type="button" onClick={() => chooseCategory("all")}>Выбрать блюда <ArrowRight size={20} /></button></div>
+                    <div className="combo-coming-soon-art" aria-hidden="true"><Gift /><span>Шашлык<br />Лайк</span></div>
+                  </div>
                 ) : <div className={`menu-product-grid ${view}`}>
                   {categoryProducts.map((product) => (
                     <ProductCard
@@ -3219,6 +3192,19 @@ function Menu({
   );
 }
 
+function productDisplayImage(product: Product) {
+  if (product.id === "garlic-sauce" && product.imageUrl === "/assets/sauce.svg") return "/assets/garlic-sauce-modern.svg";
+  if (product.id === "tomato-sauce" && product.imageUrl === "/assets/sauce.svg") return "/assets/tomato-sauce-modern.svg";
+  if (product.id === "flatbread" && product.imageUrl === "/assets/bread.svg") return "/assets/flatbread-modern.svg";
+  return product.id === "chicken-fillet" && product.imageUrl === "/assets/shashlik-hero-optimized.jpg"
+    ? "/assets/chicken-skewer-reference-v1.jpg"
+    : product.imageUrl || "/assets/placeholder.svg";
+}
+
+function supportsOnionChoice(product: Product) {
+  return Boolean(product.freeOnionEnabled || ["shashlik", "shawarma", "doner", "fajitas"].includes(product.categoryId));
+}
+
 function ProductCard({
   product,
   data,
@@ -3243,7 +3229,7 @@ function ProductCard({
   const [option, setOption] = useState(product.options?.[0] || "");
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [selectedModifiers, setSelectedModifiers] = useState<ModifierSelection[]>(() => defaultModifierSelections(product, data));
-  const [onionChoice, setOnionChoice] = useState<"with" | "without">("with");
+  const [onionChoice, setOnionChoice] = useState<"with" | "without">("without");
   const [configuring, setConfiguring] = useState(false);
   const configureButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -3256,7 +3242,7 @@ function ProductCard({
           addon.group === product.addonGroup)),
   );
   const modifierGroups = data.modifierGroups.filter((group) => group.isActive && product.modifierGroupIds?.includes(group.id));
-  const hasModifiers = Boolean(product.options?.length || addons.length || modifierGroups.length || product.freeOnionEnabled);
+  const hasModifiers = Boolean(product.options?.length || addons.length || modifierGroups.length || supportsOnionChoice(product));
   const addonTotal = selectedAddons.reduce(
     (sum, id) =>
       sum + (data.addons.find((addon) => addon.id === id)?.price || 0),
@@ -3280,7 +3266,7 @@ function ProductCard({
   }, [configuring]);
 
   function addConfigured() {
-    onAdd(product, quantity, option, selectedAddons, selectedModifiers, product.freeOnionEnabled ? onionChoice : "");
+    onAdd(product, quantity, option, selectedAddons, selectedModifiers, supportsOnionChoice(product) ? onionChoice : "");
     setConfiguring(false);
   }
 
@@ -3306,7 +3292,7 @@ function ProductCard({
           aria-label={`Открыть ${product.name}`}
         >
           <img
-            src={product.imageUrl || "/assets/placeholder.svg"}
+            src={productDisplayImage(product)}
             alt={product.name}
             loading="lazy"
             decoding="async"
@@ -3423,15 +3409,13 @@ function ProductCard({
                   ))}
                 </fieldset>
               ) : null}
-              {product.freeOnionEnabled ? (
+              {supportsOnionChoice(product) ? (
                 <fieldset className="configurator-addons modifier-group">
                   <legend>Лук бесплатно</legend>
-                  {[{ id: "with", name: "С луком" }, { id: "without", name: "Без лука" }].map((choice) => (
-                    <label key={choice.id}>
-                      <input type="radio" name={`onion-${product.id}`} checked={onionChoice === choice.id} onChange={() => setOnionChoice(choice.id as "with" | "without")} />
-                      <span>{choice.name}</span><strong>0 ₽</strong>
-                    </label>
-                  ))}
+                  <label>
+                    <input type="checkbox" checked={onionChoice === "with"} onChange={(event) => setOnionChoice(event.target.checked ? "with" : "without")} />
+                    <span>С луком</span><strong>0 ₽</strong>
+                  </label>
                 </fieldset>
               ) : null}
               {modifierGroups.map((group) => {
@@ -3504,16 +3488,18 @@ function ProductPage({
   const [option, setOption] = useState(product?.options?.[0] || "");
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [selectedModifiers, setSelectedModifiers] = useState<ModifierSelection[]>(() => product ? defaultModifierSelections(product, data) : []);
-  const [onionChoice, setOnionChoice] = useState<"with" | "without">("with");
+  const [onionChoice, setOnionChoice] = useState<"with" | "without">("without");
   const [activeImage, setActiveImage] = useState(0);
+  const [detailTab, setDetailTab] = useState<"description" | "details">("description");
   const galleryTouch = useRef(0);
   useEffect(() => {
     setQuantity(product?.step || 1);
     setOption(product?.options?.[0] || "");
     setSelectedAddons([]);
     setSelectedModifiers(product ? defaultModifierSelections(product, data) : []);
-    setOnionChoice("with");
+    setOnionChoice("without");
     setActiveImage(0);
+    setDetailTab("description");
     if (product)
       trackEvent("product_view", {
         productId: product.id,
@@ -3528,7 +3514,7 @@ function ProductPage({
       />
     );
   const images = Array.from(
-    new Set([...(product.images || []), product.imageUrl].filter(Boolean)),
+    new Set([productDisplayImage(product), ...(product.images || []), product.imageUrl].filter(Boolean)),
   );
   const addons = data.addons.filter(
     (addon) => addon.isActive && product.addonIds?.includes(addon.id),
@@ -3548,6 +3534,7 @@ function ProductPage({
         item.isActive,
     )
     .slice(0, 4);
+  const suggestedSides = data.products.filter((item) => item.isActive && item.isAvailable && item.categoryId === "sauces" && item.id !== product.id).slice(0, 3);
   const selectImage = (index: number) =>
     setActiveImage(Math.max(0, Math.min(index, images.length - 1)));
   return (
@@ -3655,16 +3642,16 @@ function ProductPage({
                 ))}
               </div>
             )}
-            <aside className="product-gallery-notes" aria-label="Преимущества блюда">
-              <div><Flame /><span><strong>Готовим на углях</strong><small>Яркий вкус и аромат живого огня</small></span></div>
-              <div><Leaf /><span><strong>Свежие продукты</strong><small>Готовим после оформления заказа</small></span></div>
-              <div><ShoppingBag /><span><strong>Удобный заказ</strong><small>Доставка или самовывоз из киоска</small></span></div>
-            </aside>
           </div>
           <div className="product-detail-copy">
-            <p className="eyebrow">Настоящий вкус на углях</p>
+            <p className="eyebrow">/// {data.categories.find((category) => category.id === product.categoryId)?.name || "На углях"}</p>
             <h1>{product.name}</h1>
             <p>{product.description}</p>
+            <div className="product-feature-strip" aria-label="Особенности блюда">
+              <span><Flame aria-hidden="true" /><b>На углях</b><small>Аромат дыма</small></span>
+              <span><Leaf aria-hidden="true" /><b>Свежие продукты</b><small>Готовим для вас</small></span>
+              <span><ShoppingBag aria-hidden="true" /><b>Удобный заказ</b><small>Доставка и самовывоз</small></span>
+            </div>
             {product.categoryId === "combo" && <div className="product-set-components"><h2>В составе сета</h2><ul>{(product.components || []).map((component) => { const included = data.products.find((item) => item.id === component.productId); return included ? <li key={included.id}>{included.name} — {component.quantity} {included.unit}</li> : null; })}</ul></div>}
             <div className="product-detail-meta">
               <span>{product.unit}</span>
@@ -3676,6 +3663,14 @@ function ProductPage({
                 {product.isAvailable ? "В наличии" : "Временно недоступен"}
               </span>
             </div>
+            {!!suggestedSides.length && <section className="product-suggested-sides" aria-labelledby="suggested-sides-title">
+              <div className="product-suggested-head"><h2 id="suggested-sides-title">Дополните заказ</h2><Link to="/menu?category=sauces">Выбрать ещё <ArrowRight size={18} /></Link></div>
+              <div className="product-suggested-grid">{suggestedSides.map((side) => <article key={side.id}>
+                <img src={side.imageUrl || "/assets/placeholder.svg"} alt="" loading="lazy" width="160" height="120" />
+                <h3>{side.name}</h3><strong>{money(side.price)}</strong>
+                <button type="button" onClick={() => onAdd(side, side.step || 1)} aria-label={`Добавить ${side.name} в корзину`}><Plus size={20} /></button>
+              </article>)}</div>
+            </section>}
             {!!product.options?.length && (
               <label>
                 Вариант
@@ -3712,15 +3707,13 @@ function ProductPage({
                 ))}
               </fieldset>
             )}
-            {product.freeOnionEnabled && (
+            {supportsOnionChoice(product) && (
               <fieldset className="product-detail-addons product-detail-modifiers">
                 <legend>Лук бесплатно</legend>
-                {[{ id: "with", name: "С луком" }, { id: "without", name: "Без лука" }].map((choice) => (
-                  <label className={onionChoice === choice.id ? "selected" : ""} key={choice.id}>
-                    <input type="radio" name={`product-onion-${product.id}`} checked={onionChoice === choice.id} onChange={() => setOnionChoice(choice.id as "with" | "without")} />
-                    <i aria-hidden="true"><Check /></i><span>{choice.name}</span><b>0 ₽</b>
-                  </label>
-                ))}
+                <label className={onionChoice === "with" ? "selected" : ""}>
+                  <input type="checkbox" checked={onionChoice === "with"} onChange={(event) => setOnionChoice(event.target.checked ? "with" : "without")} />
+                  <i aria-hidden="true"><Check /></i><span>С луком</span><b>0 ₽</b>
+                </label>
               </fieldset>
             )}
             {modifierGroups.map((group) => {
@@ -3749,11 +3742,26 @@ function ProductPage({
             <button
               className="button primary"
               disabled={!product.isAvailable}
-              onClick={() => onAdd(product, quantity, option, selectedAddons, selectedModifiers, product.freeOnionEnabled ? onionChoice : "")}
+              onClick={() => onAdd(product, quantity, option, selectedAddons, selectedModifiers, supportsOnionChoice(product) ? onionChoice : "")}
             >
               <ShoppingBag size={19} />{" "}
               {product.isAvailable ? "Добавить в корзину" : "Недоступно"}
             </button>
+          </div>
+        </section>
+        <section className="product-story" aria-label="О товаре">
+          <div className="product-story-tabs" role="tablist" aria-label="Информация о товаре">
+            <button type="button" role="tab" aria-selected={detailTab === "description"} onClick={() => setDetailTab("description")}>Описание</button>
+            <button type="button" role="tab" aria-selected={detailTab === "details"} onClick={() => setDetailTab("details")}>Детали заказа</button>
+          </div>
+          <div className="product-story-content" role="tabpanel">
+            <div><span className="product-story-kicker">Настоящий вкус</span><h2>{detailTab === "description" ? <>Сочность настоящего <em>шашлыка</em></> : <>Приготовим так, <em>как вам нравится</em></>}</h2><p>{detailTab === "description" ? product.description : `Порция: ${product.unit}. ${product.isAvailable ? "Блюдо доступно для заказа." : "Блюдо временно недоступно."} Выберите количество и доступные варианты выше.`}</p></div>
+            <aside className="product-gallery-notes" aria-label="Наши преимущества">
+              <div><Flame /><span><strong>Готовим на углях</strong><small>Настоящий аромат и вкус</small></span></div>
+              <div><Leaf /><span><strong>Свежие продукты</strong><small>От проверенных поставщиков</small></span></div>
+              <div><ChefHat /><span><strong>Готовим для вас</strong><small>После оформления заказа</small></span></div>
+            </aside>
+            <img className="product-story-image" src={images[activeImage] || "/assets/placeholder.svg"} alt={product.name} loading="lazy" width="640" height="420" />
           </div>
         </section>
         {!!related.length && (
@@ -3827,6 +3835,9 @@ function CartDrawer({
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
+  const positions = cart.detailed.length;
+  const positionForm = new Intl.PluralRules("ru").select(positions);
+  const positionLabel = positionForm === "one" ? "позиция" : positionForm === "few" ? "позиции" : "позиций";
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
@@ -3893,14 +3904,8 @@ function CartDrawer({
       />
       <aside className="cart-drawer">
         <header className="cart-drawer-header">
-          <div>
-            <h2>Корзина</h2>
-            <small>
-              {cart.detailed.length
-                ? `${cart.detailed.length} поз. · ${money(cart.subtotal)}`
-                : "Ваш заказ"}
-            </small>
-          </div>
+          <div className="cart-drawer-heading"><ShoppingBag aria-hidden="true" /><h2>Корзина</h2>{positions > 0 && <span>{positions} {positionLabel}</span>}</div>
+          <p>{positions ? "Отличный выбор! Осталось оформить заказ." : "Здесь появятся выбранные блюда."}</p>
         </header>
         <button
           ref={closeRef}
@@ -3983,9 +3988,13 @@ function CartContent({
   checkoutQuote?: { discount: number; total: number; deliveryPrice: number } | null;
 }) {
   const [promoDraft, setPromoDraft] = useState(cart.promoCode);
-  const promoControls = !checkoutSummary && <form className="cart-promo" onSubmit={(event) => { event.preventDefault(); cart.applyPromoCode(promoDraft); }}><label htmlFor={compact ? "drawer-promo-code" : "cart-promo-code"}>Промокод</label><div><input id={compact ? "drawer-promo-code" : "cart-promo-code"} value={promoDraft} onChange={(event) => setPromoDraft(event.target.value)} autoComplete="off" placeholder="Введите код" /><button type="submit">Применить</button></div>{cart.promoQuote && <p role="status">Промокод {cart.promoQuote.code} применён. Скидка {money(cart.promoQuote.discount)}. <button type="button" onClick={() => { cart.applyPromoCode(""); setPromoDraft(""); }}>Убрать</button></p>}{cart.promoError && <p className="cart-promo-error" role="alert">{cart.promoError}</p>}</form>;
+  const promoInputId = checkoutSummary ? "checkout-promo-code" : compact ? "drawer-promo-code" : "cart-promo-code";
+  const promoControls = checkoutSummary
+    ? <div className="cart-promo"><label htmlFor={promoInputId}>Промокод</label><div><input id={promoInputId} value={promoDraft} onChange={(event) => setPromoDraft(event.target.value)} autoComplete="off" placeholder="Введите код" /><button type="button" onClick={() => cart.applyPromoCode(promoDraft)}>Применить</button></div>{cart.promoQuote && <p role="status">Промокод {cart.promoQuote.code} применён. Скидка {money(cart.promoQuote.discount)}. <button type="button" onClick={() => { cart.applyPromoCode(""); setPromoDraft(""); }}>Убрать</button></p>}{cart.promoError && <p className="cart-promo-error" role="alert">{cart.promoError}</p>}</div>
+    : <form className="cart-promo" onSubmit={(event) => { event.preventDefault(); cart.applyPromoCode(promoDraft); }}><label htmlFor={promoInputId}>Промокод</label><div><input id={promoInputId} value={promoDraft} onChange={(event) => setPromoDraft(event.target.value)} autoComplete="off" placeholder="Введите код" /><button type="submit">Применить</button></div>{cart.promoQuote && <p role="status">Промокод {cart.promoQuote.code} применён. Скидка {money(cart.promoQuote.discount)}. <button type="button" onClick={() => { cart.applyPromoCode(""); setPromoDraft(""); }}>Убрать</button></p>}{cart.promoError && <p className="cart-promo-error" role="alert">{cart.promoError}</p>}</form>;
   const crossSell = data.products
     .filter((product) =>
+      product.isActive && product.isAvailable &&
       ["flatbread", "garlic-sauce", "shippi", "tomato-sauce"].includes(
         product.id,
       ),
@@ -4007,14 +4016,14 @@ function CartContent({
     <div className="cart-items">
       {cart.detailed.map((item, index) => (
         <article key={`${item.productId}-${index}`} className="cart-row">
-          <img src={item.product.imageUrl} alt="" />
+          <img src={productDisplayImage(item.product)} alt="" />
           <div>
             <strong>{item.product.name}</strong>
             {item.option && <small>{item.option}</small>}
             {item.addons.length ? (
               <small>{item.addons.map((addon) => addon.name).join(", ")}</small>
             ) : null}
-            {item.onionChoice && <small>{item.onionChoice === "without" ? "Без лука" : "С луком"}</small>}
+            {supportsOnionChoice(item.product) && <small>{item.onionChoice === "with" ? "С луком" : "Без лука"}</small>}
             {item.modifiers.length ? <small>{item.modifiers.flatMap((selection) => selection.options.map((option) => `${selection.group.name}: ${option.name}`)).join(" · ")}</small> : null}
             <Quantity
               value={item.quantity}
@@ -4026,6 +4035,7 @@ function CartContent({
           <div className="cart-row-end">
             <strong>{money(item.lineTotal)}</strong>
             <button
+              type="button"
               onClick={() => cart.remove(index)}
               aria-label={`Удалить ${item.product.name}`}
             >
@@ -4037,24 +4047,27 @@ function CartContent({
       ))}
     </div>
   );
-  const crossSellBlock = !checkoutSummary && (
+  const crossSellBlock = crossSell.length > 0 && (
     <div className="cross-sell">
       <div className="cross-sell-heading">
         <div>
-          <small>Можно добавить</small>
-          <h2>К заказу</h2>
+          <small>{compact ? "Дополните вкус" : "Можно добавить"}</small>
+          <h2>{compact ? "Добавить к заказу?" : "К заказу"}</h2>
         </div>
         <span>{crossSell.length} варианта</span>
       </div>
       <div className="cross-sell-list">
         {crossSell.map((product) => (
           <button
+            type="button"
             key={product.id}
             onClick={() => cart.add(product, product.step || 1)}
+            aria-label={`Добавить ${product.name} за ${money(product.price)}`}
           >
-            <img src={product.imageUrl} alt="" />
+            <img src={productDisplayImage(product)} alt="" />
             <span>{product.name}</span>
             <strong>+ {money(product.price)}</strong>
+            <span className="cross-sell-add" aria-hidden="true"><Plus /></span>
           </button>
         ))}
       </div>
@@ -4393,6 +4406,10 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
       />
     );
 
+  const visibleQuote = checkoutQuote ?? (deliveryType === "pickup"
+    ? { discount: 0, deliveryPrice: 0, total: cart.subtotal }
+    : null);
+
   return (
     <div className="home-shell commerce-shell">
       <HomeHeader
@@ -4404,16 +4421,16 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
       />
       <main className="checkout-page">
         <div className="checkout-hero" aria-hidden="true">
-          <img src="/assets/home-hero-cinematic.webp" alt="" />
+          <img src="/assets/chicken-skewer-reference-v1.jpg" alt="" />
         </div>
         <div className="home-container checkout-wrap">
-          <Link className="checkout-back" to="/menu">
-            <ArrowLeft aria-hidden="true" /> Назад в меню
+          <Link className="checkout-back" to="/cart">
+            <ArrowLeft aria-hidden="true" /> Вернуться в корзину
           </Link>
           <div className="page-head">
-            <p>Оформление</p>
+            <p>Оформление заказа</p>
             <h1>
-              ОФОРМЛЕНИЕ <strong>ЗАКАЗА</strong>
+              Оформление <strong>заказа</strong>
             </h1>
             <span>
               Заполните данные для доставки или самовывоза. Оплата производится
@@ -4422,61 +4439,35 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
           </div>
           <form className="checkout-grid" onSubmit={submit}>
             <div className="form-panel checkout-form-card">
-              <h2>
-                <UserRound aria-hidden="true" /> Контактные данные
-              </h2>
-              <label>
-                Имя
-                <input
-                  required
-                  minLength={2}
-                  autoComplete="name"
-                  value={form.customerName}
-                  onChange={(event) =>
-                    setForm({ ...form, customerName: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Телефон
-                <input
-                  required
-                  title="Введите номер в формате +7 (900) 000-00-00"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  value={form.phone}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      phone: formatRussianPhone(event.target.value),
-                    })
-                  }
-                  placeholder="+7 (___) ___-__-__"
-                />
-              </label>
-              <h2>
-                <Bike aria-hidden="true" /> Способ получения
-              </h2>
-              <div className="segmented">
+              <section className="checkout-step checkout-step-fulfillment" aria-labelledby="checkout-fulfillment-title">
+              <h2 id="checkout-fulfillment-title"><span className="checkout-step-number">1</span>Способ получения</h2>
+              <div className="segmented checkout-fulfillment-options">
                 <button
                   type="button"
                   className={deliveryType === "delivery" ? "active" : ""}
+                  aria-pressed={deliveryType === "delivery"}
                   onClick={() => setDeliveryType("delivery")}
                 >
-                  Доставка
+                  <Bike aria-hidden="true" /><span><strong>Доставка</strong><small>Привезём к вам домой</small></span><Check className="checkout-option-check" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   className={deliveryType === "pickup" ? "active" : ""}
+                  aria-pressed={deliveryType === "pickup"}
                   onClick={() => setDeliveryType("pickup")}
                 >
-                  Самовывоз
+                  <Store aria-hidden="true" /><span><strong>Самовывоз</strong><small>Заберу в киоске</small></span><Check className="checkout-option-check" aria-hidden="true" />
                 </button>
               </div>
+              </section>
+              <section className="checkout-step checkout-step-address" aria-labelledby="checkout-address-title">
+                <h2 id="checkout-address-title"><span className="checkout-step-number">2</span>{deliveryType === "delivery" ? "Адрес доставки" : "Точка самовывоза"}</h2>
               {deliveryType === "delivery" ? (
                 <>
                   <label>
                     Адрес
+                    <span className="checkout-input-wrap">
+                    <MapPin aria-hidden="true" />
                     <input
                       required
                       autoComplete="street-address"
@@ -4490,6 +4481,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
                       aria-describedby="address-help address-result"
                       aria-invalid={addressState.status === "invalid"}
                     />
+                    </span>
                     <small className="field-hint" id="address-help">
                       Доставка по Воронежу. Обязательно укажите номер дома.
                     </small>
@@ -4549,6 +4541,8 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
               ) : (
                 <label>
                   Точка самовывоза
+                  <span className="checkout-input-wrap checkout-select-wrap">
+                  <MapPin aria-hidden="true" />
                   <select
                     required
                     value={form.pickupPointId}
@@ -4565,21 +4559,21 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
                         </option>
                       ))}
                   </select>
+                  <ChevronDown className="checkout-select-chevron" aria-hidden="true" />
+                  </span>
                 </label>
               )}
-              <label>
-                Комментарий
-                <textarea
-                  value={form.comment}
-                  onChange={(event) =>
-                    setForm({ ...form, comment: event.target.value })
-                  }
-                />
-              </label>
+              </section>
+              <section className="checkout-step checkout-step-contact" aria-labelledby="checkout-contact-title">
+                <h2 id="checkout-contact-title"><span className="checkout-step-number">3</span>Контактные данные</h2>
+                <div className="checkout-contact-fields">
+                  <label>Ваше имя<span className="checkout-input-wrap"><UserRound aria-hidden="true" /><input required minLength={2} autoComplete="name" value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} placeholder="Как к вам обращаться" /></span></label>
+                  <label>Телефон<span className="checkout-input-wrap"><Phone aria-hidden="true" /><input required title="Введите номер в формате +7 (900) 000-00-00" inputMode="tel" autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: formatRussianPhone(event.target.value) })} placeholder="+7 (___) ___-__-__" /></span></label>
+                </div>
+              </section>
+              <section className="checkout-step checkout-step-payment" aria-labelledby="checkout-payment-title">
+                <h2 id="checkout-payment-title"><span className="checkout-step-number">4</span>Способ оплаты при получении</h2>
               <div className="payment-note">
-                <strong>
-                  <WalletCards aria-hidden="true" /> Способ оплаты при получении
-                </strong>
                 <div
                   className="segmented checkout-payment-options"
                   role="radiogroup"
@@ -4594,7 +4588,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
                     }
                     onClick={() => setPaymentMethod("CARD_ON_DELIVERY")}
                   >
-                    Картой при получении
+                    <span className="checkout-payment-icon"><WalletCards aria-hidden="true" /></span><span className="checkout-payment-label">Картой<small>при получении</small></span><Check className="checkout-payment-check" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -4605,7 +4599,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
                     }
                     onClick={() => setPaymentMethod("TRANSFER_ON_DELIVERY")}
                   >
-                    Переводом при получении
+                    <span className="checkout-payment-icon"><RefreshCw aria-hidden="true" /></span><span className="checkout-payment-label">Переводом<small>при получении</small></span><Check className="checkout-payment-check" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -4616,7 +4610,7 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
                     }
                     onClick={() => setPaymentMethod("CASH_ON_DELIVERY")}
                   >
-                    Наличными при получении
+                    <span className="checkout-payment-icon"><WalletCards aria-hidden="true" /></span><span className="checkout-payment-label">Наличными<small>при получении</small></span><Check className="checkout-payment-check" aria-hidden="true" />
                   </button>
                 </div>
                 <p>
@@ -4624,21 +4618,26 @@ function Checkout({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
                   подтверждения заказа.
                 </p>
               </div>
+              </section>
+              <section className="checkout-step checkout-step-comment" aria-labelledby="checkout-comment-title">
+                <h2 id="checkout-comment-title"><span className="checkout-step-number">5</span><span className="checkout-step-title">Комментарий к заказу <small>по желанию</small></span></h2>
+                <label><span className="sr-only">Комментарий к заказу</span><span className="checkout-input-wrap checkout-textarea-wrap"><MessageCircle aria-hidden="true" /><textarea value={form.comment} onChange={(event) => setForm({ ...form, comment: event.target.value })} placeholder="Например: без лука, больше соуса и т. д." /></span></label>
+              </section>
               {error && <p className="form-error">{error}</p>}
             </div>
             <aside className="summary-panel">
-              <CartContent data={data} cart={cart} compact checkoutSummary checkoutQuote={checkoutQuote} />
+              <div className="checkout-summary-head"><div><h2>Ваш заказ</h2><span>{cart.detailed.length} {new Intl.PluralRules("ru").select(cart.detailed.length) === "one" ? "позиция" : new Intl.PluralRules("ru").select(cart.detailed.length) === "few" ? "позиции" : "позиций"}</span></div><Link to="/cart" aria-label="Изменить состав заказа"><ArrowRight aria-hidden="true" /> Изменить</Link></div>
+              <CartContent data={data} cart={cart} compact checkoutSummary checkoutQuote={visibleQuote} />
               {cart.promoCode && <div className="checkout-promo-summary" role="status">{checkoutQuote ? <>Промокод {cart.promoCode}: скидка {money(checkoutQuote.discount)}. Итого {money(checkoutQuote.total)}.</> : <>Промокод {cart.promoCode} будет проверен при оформлении заказа.</>}</div>}
               <button
                 className="button primary full checkout-submit"
                 disabled={busy}
                 aria-busy={busy}
               >
-                {busy ? "ОФОРМЛЯЕМ..." : "ПОДТВЕРДИТЬ ЗАКАЗ →"}
+                {busy ? "Оформляем..." : "Подтвердить заказ →"}
               </button>
               <p className="cart-security">
-                <ShieldCheck aria-hidden="true" /> Корзина очистится только
-                после подтверждения заказа сервером.
+                <ShieldCheck aria-hidden="true" /> Данные используются только для оформления заказа. Корзина очистится после подтверждения.
               </p>
             </aside>
           </form>

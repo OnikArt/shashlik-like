@@ -1,0 +1,160 @@
+/* Focused checkout controls. Kept separate from catalog and cart styles. */
+.commerce-shell .checkout-page .checkout-fulfillment-options {
+  gap: 12px;
+}
+.commerce-shell .checkout-page .checkout-fulfillment-options button {
+  position: relative;
+  min-height: 112px;
+  padding: 18px;
+  border: 1px solid #e8e1dc;
+  border-radius: 23px;
+  background: linear-gradient(145deg, #fff, #fbf9f7);
+  box-shadow: 0 10px 25px rgba(59, 36, 20, .045);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.commerce-shell .checkout-page .checkout-fulfillment-options button:hover,
+.commerce-shell .checkout-page .checkout-payment-options button:hover {
+  transform: translateY(-2px);
+  border-color: #f6a47c;
+  box-shadow: 0 14px 26px rgba(142, 72, 36, .11);
+}
+.commerce-shell .checkout-form-card .segmented.checkout-fulfillment-options button.active {
+  border-color: #f4510b;
+  background: linear-gradient(145deg, #fffdfb, #fff1e8);
+  box-shadow: 0 0 0 3px rgba(244, 81, 11, .08), 0 17px 30px rgba(227, 87, 31, .11);
+}
+.checkout-page .checkout-fulfillment-options button > svg:first-child {
+  width: 50px;
+  height: 50px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #fff0e5;
+  color: #e75013;
+}
+.checkout-page .checkout-fulfillment-options button strong { font-size: 1.03rem; }
+.checkout-page .checkout-fulfillment-options button small { font-size: .76rem; }
+.checkout-page .checkout-fulfillment-options .checkout-option-check { width: 24px; height: 24px; }
+
+.commerce-shell .checkout-page .checkout-step label { gap: 9px; color: #51443c; font-size: .83rem; font-weight: 750; }
+.checkout-page .checkout-input-wrap {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid #e9ded6;
+  border-radius: 17px;
+  background: linear-gradient(140deg, #fff, #fcf9f7);
+  box-shadow: 0 7px 19px rgba(67, 43, 29, .045);
+  transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+}
+.checkout-page .checkout-input-wrap > svg:first-child { flex: none; width: 21px; height: 21px; margin-left: 16px; color: #ed5a19; stroke-width: 1.9; }
+.checkout-page .checkout-input-wrap:focus-within { border-color: #f4510b; background: #fff; box-shadow: 0 0 0 4px rgba(244, 81, 11, .1), 0 12px 22px rgba(67, 43, 29, .07); }
+.commerce-shell .checkout-form-card .checkout-input-wrap :is(input,select,textarea) {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 58px;
+  padding: 14px 15px;
+  border: 0;
+  border-radius: 17px;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #241d18;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.commerce-shell .checkout-form-card .checkout-input-wrap :is(input,select,textarea):focus { outline: 0; border: 0; box-shadow: none; }
+.checkout-page .checkout-input-wrap:has([aria-invalid="true"]) { border-color: #bd2f23; }
+.checkout-page .checkout-select-wrap select { appearance: none; cursor: pointer; padding-right: 36px !important; }
+.checkout-page .checkout-select-wrap .checkout-select-chevron { position: absolute; right: 16px; width: 18px; height: 18px; margin: 0; color: #50443d; pointer-events: none; }
+.commerce-shell .checkout-page .address-details input { min-height: 55px; border-radius: 15px; background: #fcfaf8; box-shadow: 0 7px 17px rgba(67, 43, 29, .04); }
+.checkout-page .checkout-textarea-wrap { align-items: flex-start; min-height: 130px; }
+.checkout-page .checkout-step-title { min-width: 0; }
+.checkout-page .checkout-step-comment h2 small { display: inline-block; margin-left: 6px; white-space: nowrap; }
+.checkout-page .checkout-textarea-wrap > svg:first-child { margin-top: 18px; }
+.commerce-shell .checkout-page .checkout-textarea-wrap textarea { min-height: 126px; resize: vertical; line-height: 1.45; }
+
+.commerce-shell .checkout-page .checkout-payment-options { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 10px; }
+.commerce-shell .checkout-page .checkout-payment-options button {
+  position: relative;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 112px;
+  padding: 13px;
+  border: 1px solid #e8e1dc;
+  border-radius: 19px;
+  background: linear-gradient(145deg, #fff, #fbf9f7);
+  color: #281e18;
+  text-align: left;
+  box-shadow: 0 8px 20px rgba(67, 43, 29, .04);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.commerce-shell .checkout-form-card .segmented.checkout-payment-options button.active {
+  border-color: #f4510b;
+  background: linear-gradient(145deg, #fffdfb, #fff1e8);
+  box-shadow: 0 0 0 3px rgba(244, 81, 11, .07), 0 12px 24px rgba(227, 87, 31, .09);
+}
+.checkout-page .checkout-payment-icon { display: grid; place-items: center; width: 39px; height: 39px; border-radius: 12px; background: #fff0e5; }
+.checkout-page .checkout-payment-icon svg { width: 21px; height: 21px; color: #e75013; }
+.checkout-page .checkout-payment-label { display: grid; gap: 1px; font-size: .9rem; font-weight: 800; line-height: 1.15; }
+.checkout-page .checkout-payment-label small { color: #85766c; font-size: .66rem; font-weight: 570; }
+.checkout-page .checkout-payment-check { display: none; position: absolute; top: 12px; right: 12px; width: 22px !important; height: 22px !important; padding: 4px; border-radius: 50%; background: #f4510b; color: #fff !important; }
+.checkout-page .checkout-payment-options button.active .checkout-payment-check { display: block; }
+
+.checkout-page .summary-panel .cart.compact .cross-sell { padding: 17px; border: 1px solid #f4dfd3; border-radius: 23px; background: radial-gradient(circle at 100% 0, #ffe3d2, transparent 45%), linear-gradient(135deg, #fff9f5, #fff0e8); }
+.checkout-page .summary-panel .cross-sell-heading { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.checkout-page .summary-panel .cross-sell-heading small { font-size: .68rem; letter-spacing: .16em; }
+.checkout-page .summary-panel .cross-sell-heading h2 { font-size: 1.32rem; letter-spacing: -.04em; }
+.checkout-page .summary-panel .cross-sell-heading > span { display: inline; color: #ab5734; font-size: .71rem; font-weight: 750; white-space: nowrap; }
+.checkout-page .summary-panel .cross-sell-list { gap: 9px; scroll-snap-type: x mandatory; }
+.checkout-page .summary-panel .cross-sell-list button {
+  position: relative;
+  display: grid;
+  flex: 1 0 0;
+  min-width: 0;
+  grid-template-columns: minmax(0,1fr) 28px;
+  grid-template-rows: 78px auto auto;
+  gap: 5px 3px;
+  min-height: 157px;
+  padding: 8px;
+  border: 1px solid #f2e5dc;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(101, 57, 34, .055);
+  scroll-snap-align: start;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.checkout-page .summary-panel .cross-sell-list button:hover { transform: translateY(-3px); box-shadow: 0 15px 24px rgba(101, 57, 34, .12); }
+.checkout-page .summary-panel .cross-sell-list img { grid-column: 1 / -1; grid-row: 1; width: 100%; height: 78px; border-radius: 10px; background: #201712; object-fit: cover; }
+.checkout-page .summary-panel .cross-sell-list button > span:not(.cross-sell-add) { grid-column: 1 / -1; grid-row: 2; align-self: start; min-height: 2.2em; font-size: .76rem; font-weight: 780; line-height: 1.1; }
+.checkout-page .summary-panel .cross-sell-list strong { grid-column: 1; grid-row: 3; align-self: center; font-size: .8rem; font-weight: 820; }
+.checkout-page .summary-panel .cross-sell-list .cross-sell-add { display: grid; grid-column: 2; grid-row: 3; place-items: center; width: 27px; height: 27px; border-radius: 50%; background: #f4510b; color: #fff; }
+.checkout-page .summary-panel .cross-sell-list .cross-sell-add svg { width: 15px; height: 15px; }
+
+[data-winter="on"] .checkout-page .checkout-input-wrap { border-color: #cddfe8; background: #f8fcfe; }
+[data-winter="on"] .checkout-page .summary-panel .cart.compact .cross-sell { border-color: #c9deea; background: linear-gradient(135deg, #fbfeff, #edf6fb); }
+[data-winter="on"] .commerce-shell .checkout-form-card .segmented.checkout-fulfillment-options button.active,
+[data-winter="on"] .commerce-shell .checkout-form-card .segmented.checkout-payment-options button.active { background: linear-gradient(145deg, #fff, #edf7fb); }
+
+@media (max-width: 600px) {
+  .checkout-page .summary-panel .cross-sell-list button { flex: 1 1 0; }
+  .checkout-page .summary-panel .cross-sell-heading > span { display: inline; }
+}
+@media (max-width: 480px) {
+  .commerce-shell .checkout-page .checkout-fulfillment-options button { min-height: 122px; padding: 12px; }
+  .checkout-page .checkout-fulfillment-options button > svg:first-child { width: 43px; height: 43px; padding: 10px; }
+  .commerce-shell .checkout-page .checkout-payment-options { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .checkout-page .checkout-payment-options button:last-child { grid-column: 1 / -1; }
+  .commerce-shell .checkout-page .checkout-payment-options button { min-height: 97px; }
+  .checkout-page .checkout-input-wrap > svg:first-child { margin-left: 12px; }
+  .checkout-page .summary-panel .cross-sell-list button { flex: 0 0 155px; }
+  .checkout-page .summary-panel .cross-sell-heading > span { font-size: 0; }
+  .checkout-page .summary-panel .cross-sell-heading > span::after { content: "Листайте →"; font-size: .71rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .checkout-page :is(.checkout-fulfillment-options button,.checkout-payment-options button,.cross-sell-list button,.checkout-input-wrap) { transition: none; }
+}

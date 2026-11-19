@@ -1508,8 +1508,9 @@ function calculateOrder(store, payload) {
       modifiers.push({ groupId: group.id, groupName: group.name, options: selected.map((option) => ({ id: option.id, name: option.name, price: Number(option.price || 0) })) });
     }
     if ([...requestedByGroup.keys()].some((groupId) => !(product.modifierGroupIds || []).includes(groupId))) throw new Error(`Недоступная группа модификаторов товара «${product.name}»`);
-    const onionChoice = product.freeOnionEnabled ? (item.onionChoice === "without" ? "without" : "with") : "";
-    if (!product.freeOnionEnabled && item.onionChoice) throw new Error(`Выбор лука недоступен для товара «${product.name}»`);
+    const onionAvailable = product.freeOnionEnabled || ["shashlik", "shawarma", "doner", "fajitas"].includes(product.categoryId);
+    const onionChoice = onionAvailable ? (item.onionChoice === "with" ? "with" : "without") : "";
+    if (!onionAvailable && item.onionChoice) throw new Error(`Выбор лука недоступен для товара «${product.name}»`);
     const modifierTotal = modifiers.reduce((sum, group) => sum + group.options.reduce((groupSum, option) => groupSum + option.price, 0), 0);
     const lineTotal = lineItemTotal(product, quantity, addonsTotal + modifierTotal);
     items.push({

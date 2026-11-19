@@ -1,6 +1,6 @@
 /* Commerce-only bridge to the shared urban tokens. Older page rules remain for other routes. */
 .menu-shell, .commerce-shell { --color-background: var(--urban-paper); --color-heading: var(--urban-ink); --color-text: var(--urban-ink); --color-muted: var(--urban-muted); --color-primary: var(--urban-orange); --color-border: var(--urban-line); background: var(--urban-paper); color: var(--urban-ink); }
-.menu-shell :is(h1,h2,h3), .commerce-shell :is(h1,h2,h3) { font-family: "Geologica", system-ui, sans-serif; font-weight: 650; letter-spacing: -.025em; line-height: 1.12; }
+.menu-shell :is(h1,h2,h3), .commerce-shell :is(h1,h2,h3) { font-family: "Onest", "Geologica", system-ui, sans-serif; font-weight: 650; letter-spacing: -.025em; line-height: 1.12; }
 .menu-shell :is(p,small), .commerce-shell :is(p,small) { line-height: 1.55; }
 .menu-shell :is(a,button,input,select):focus-visible, .commerce-shell :is(a,button,input,select,textarea):focus-visible, .cart-drawer :is(a,button,input):focus-visible { outline: 3px solid var(--urban-orange); outline-offset: 3px; }
 .menu-shell .menu-hero { min-height: 310px; background: var(--urban-cream); }
@@ -34,7 +34,7 @@
 .product-shell .product-detail-media { overflow: hidden; border-radius: var(--urban-radius-md); background: #261b16; }
 .product-shell .product-detail-media > img { width: 100%; height: 100%; object-fit: cover; }
 .product-shell .product-detail-copy { border: 1px solid var(--urban-line); border-radius: var(--urban-radius-md); background: white; box-shadow: none; }
-.product-shell .product-detail-copy h1 { color: var(--urban-ink); font-family: "Geologica", system-ui, sans-serif; font-weight: 650; letter-spacing: -.035em; line-height: 1.1; overflow-wrap: anywhere; }
+.product-shell .product-detail-copy h1 { color: var(--urban-ink); font-family: "Onest", "Geologica", system-ui, sans-serif; font-weight: 650; letter-spacing: -.035em; line-height: 1.1; overflow-wrap: anywhere; }
 .product-shell .product-detail-copy > p:not(.eyebrow) { max-width: 52ch; color: var(--urban-muted); line-height: 1.55; }
 .product-shell .product-detail-copy :is(select,button):focus-visible, .product-shell .product-detail-media button:focus-visible { outline: 3px solid var(--urban-orange); outline-offset: 3px; }
 .product-shell .product-detail-addons label { min-width: 0; border-color: var(--urban-line); }

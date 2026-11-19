@@ -1,0 +1,38 @@
+.urban-hero-mobile-only { display: none; }
+
+@media (max-width: 640px) {
+  .urban-home .urban-hero { display: block; min-height: clamp(710px, 150vw, 920px); background: #f9eee5; isolation: isolate; overflow: hidden; }
+  .urban-home .urban-hero-copy { box-sizing: border-box; width: 100%; min-height: clamp(710px, 150vw, 920px); margin: 0; padding: 30px 22px 26px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; }
+  .urban-hero-desktop-only { display: none !important; }
+  .urban-hero-mobile-only { display: inline; }
+  .urban-home .urban-hero-visual { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; min-height: 0; background: #f9eee5; }
+  .urban-home .urban-hero-visual picture, .urban-home .urban-hero-visual img { display: block; width: 100%; height: 100%; }
+  .urban-home .urban-hero-visual img { object-fit: cover; object-position: 64% 67%; }
+  .urban-home .urban-hero-visual::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #f9f2ed 0%, #f9f2ed 24%, rgba(249,242,237,.96) 36%, rgba(249,242,237,.74) 48%, rgba(249,242,237,.08) 66%, rgba(249,242,237,.04) 78%, #f9f2ed 100%); }
+  .urban-home .urban-hero .urban-eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 24px; color: #241a16; font-size: clamp(.68rem, 2.5vw, .83rem); font-weight: 850; line-height: 1.25; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap; }
+  .urban-home .urban-hero .urban-eyebrow > span:first-child { display: none; }
+  .urban-home .urban-hero .urban-eyebrow::after { content: ""; flex: 1; min-width: 23px; max-width: 56px; height: 2px; margin-left: 2px; border-radius: 2px; background: #f4510b; }
+  .urban-home .urban-hero h1 { width: 100%; max-width: none; margin: 0; color: #1f1a17; font-size: clamp(3.15rem, 12.2vw, 5.4rem); font-weight: 850; font-style: italic; line-height: .91; letter-spacing: -.07em; text-transform: none; text-wrap: nowrap; }
+  .urban-home .urban-hero h1 em { display: inline-block; color: #f4510b; font-style: italic; white-space: nowrap; }
+  .urban-home .urban-hero h1 em::after { left: 38%; right: 7%; bottom: -.1em; height: .04em; transform: rotate(-3deg); }
+  .urban-home .urban-hero-lead { width: min(100%, 34ch); max-width: none; margin: 22px 0 22px; color: #3c342f; font-size: clamp(.98rem, 3.6vw, 1.3rem); font-weight: 480; line-height: 1.35; }
+  .urban-home .urban-hero-actions { display: flex; flex-direction: column; align-items: flex-start; flex-wrap: nowrap; width: 100%; gap: 10px; }
+  .urban-home .urban-hero-actions a { box-sizing: border-box; display: inline-flex; flex: none; justify-content: center; gap: 11px; width: min(100%, 330px); min-height: 58px; padding: 10px 16px; border-radius: 999px; font-size: clamp(.92rem, 3.8vw, 1.15rem); font-weight: 800; white-space: nowrap; }
+  .urban-home .urban-hero-actions .urban-link-button--primary { background: linear-gradient(100deg, #ff7011, #eb3308); color: #fff; box-shadow: 0 13px 26px rgba(228,70,10,.25); }
+  .urban-home .urban-hero-actions .urban-link-button--primary > svg:last-child { margin-left: auto; }
+  .urban-home .urban-hero-actions .urban-link-button--secondary { width: min(82%, 275px); border: 1px solid #e7d3c6; background: rgba(255,255,255,.92); box-shadow: 0 10px 22px rgba(57,27,13,.13); }
+  .urban-home .urban-hero-actions svg { width: 21px; height: 21px; }
+  .urban-home .urban-hero-benefits { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 7px; align-self: stretch; width: 100%; margin: auto 0 0; }
+  .urban-home .urban-hero-benefits > span { box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: auto; min-width: 0; max-width: none; min-height: 112px; padding: 12px 4px; border: 1px solid rgba(255,255,255,.8); border-radius: 18px; background: rgba(255,250,247,.84); color: #211a17; box-shadow: 0 11px 24px rgba(69,35,20,.08); text-align: center; font-size: clamp(.65rem, 2.5vw, .82rem); font-weight: 760; line-height: 1.15; backdrop-filter: blur(9px); }
+  .urban-home .urban-hero-benefits > span svg { flex: none; width: clamp(26px, 6vw, 37px); height: clamp(26px, 6vw, 37px); color: #f4510b; stroke-width: 1.9; }
+  .urban-home .urban-hero-benefits > span > .urban-hero-mobile-only { display: inline; max-width: none; }
+  [data-winter="on"] .urban-home .urban-hero { background: #eaf3f8; }
+  [data-winter="on"] .urban-home .urban-hero-visual::after { background: linear-gradient(180deg, #eaf3f8 0%, #eaf3f8 24%, rgba(234,243,248,.95) 37%, rgba(234,243,248,.73) 49%, rgba(234,243,248,.06) 70%, #eaf3f8 100%); }
+  [data-winter="on"] .urban-home .urban-hero-benefits > span { background: rgba(248,253,255,.86); }
+}
+
+@media (max-width: 390px) {
+  .urban-home .urban-hero-copy { padding-inline: 17px; }
+  .urban-home .urban-hero h1 { font-size: 12vw; }
+  .urban-home .urban-hero-benefits > span { min-height: 100px; }
+}

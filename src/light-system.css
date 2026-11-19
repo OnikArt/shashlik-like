@@ -1,4 +1,12 @@
 @font-face {
+  font-family: "Onest";
+  src: url("/fonts/Onest-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "Geologica";
   src: url("/fonts/Geologica-Variable.ttf") format("truetype");
   font-style: normal;
@@ -57,7 +65,7 @@ button,
 input,
 select,
 textarea {
-  font-family: "Geologica", system-ui, sans-serif;
+  font-family: "Onest", "Geologica", system-ui, sans-serif;
 }
 
 body {
@@ -66,6 +74,9 @@ body {
   color: var(--color-text);
   background: var(--color-background);
   letter-spacing: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
 }
 
 button,

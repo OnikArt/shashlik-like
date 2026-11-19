@@ -68,7 +68,7 @@ button,
 input,
 select,
 textarea {
-  font-family: "Geologica", system-ui, sans-serif;
+  font-family: "Onest", "Geologica", system-ui, sans-serif;
 }
 
 body * {
@@ -88,7 +88,7 @@ body {
 .contacts-page,
 .admin-shell,
 .order-status-shell {
-  font-family: "Geologica", system-ui, sans-serif;
+  font-family: "Onest", "Geologica", system-ui, sans-serif;
 }
 
 .home-shell,
@@ -206,7 +206,7 @@ button:disabled {
 .home-cart-button,
 .home-menu-button,
 .home-favorites-button {
-  font-family: "Geologica", system-ui, sans-serif;
+  font-family: "Onest", "Geologica", system-ui, sans-serif;
 }
 
 .home-brand strong,

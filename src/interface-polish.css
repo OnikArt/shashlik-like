@@ -1,0 +1,123 @@
+/* Public interface typography and controls. Keep admin styling independent. */
+:root {
+  --ui-ink: #211a17;
+  --ui-muted: #625852;
+  --ui-accent: #d9430b;
+  --ui-accent-hover: #b93208;
+  --ui-ring: #d9430b;
+  --ui-elevation: 0 12px 30px rgba(65, 34, 18, .12);
+}
+[data-winter="on"] {
+  --ui-ink: #193547;
+  --ui-muted: #4c6676;
+  --ui-accent: #cf4615;
+  --ui-accent-hover: #ad3510;
+  --ui-ring: #317999;
+  --ui-elevation: 0 12px 30px rgba(39, 77, 98, .14);
+}
+
+:is(.urban-home, .menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page) {
+  font-family: "Onest", "Geologica", system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.55;
+  font-optical-sizing: auto;
+}
+:is(.urban-home, .menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page) :is(h1, h2, h3) {
+  font-family: inherit;
+  font-weight: 760;
+  letter-spacing: -.045em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+:is(.urban-home, .menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page) :is(p, li) {
+  line-height: 1.6;
+}
+:is(.urban-home, .menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page) :is(small, .urban-eyebrow) {
+  line-height: 1.4;
+}
+.urban-home .urban-hero h1 {
+  font-weight: 850;
+  letter-spacing: -.065em;
+  line-height: .96;
+  text-wrap: nowrap;
+}
+.urban-home .urban-promo h2,
+.urban-home .urban-category h3 { color: #fff; }
+.urban-home .urban-promo h2 em { color: #ff641f; }
+.urban-home .urban-eyebrow { font-weight: 750; letter-spacing: .15em; }
+.urban-home .urban-hero-lead { color: #3d302a; font-weight: 430; line-height: 1.5; }
+[data-winter="on"] .urban-home .urban-hero-lead { color: #365669; }
+
+:is(.urban-button, .urban-link-button, .urban-cart-button, :is(.menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .cart-drawer) :is(.button.primary, .button.ghost)) {
+  border-radius: 999px;
+  font-family: "Onest", "Geologica", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -.015em;
+  transition: background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+:is(.urban-button--primary, .urban-link-button--primary, .menu-shell .button.primary, .commerce-shell .button.primary, .product-shell .button.primary, .production-standalone .button.primary, .delivery-page .button.primary, .about-page .button.primary, .contacts-page .button.primary) {
+  background: var(--ui-accent);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(217, 67, 11, .16);
+}
+:is(.urban-button--primary, .urban-link-button--primary, .menu-shell .button.primary, .commerce-shell .button.primary, .product-shell .button.primary, .production-standalone .button.primary, .delivery-page .button.primary, .about-page .button.primary, .contacts-page .button.primary):hover:not(:disabled) {
+  background: var(--ui-accent-hover);
+  color: #fff;
+  box-shadow: 0 12px 24px rgba(176, 50, 8, .2);
+  transform: translateY(-2px);
+}
+:is(.urban-button--secondary, .urban-link-button--secondary, .menu-shell .button.ghost, .commerce-shell .button.ghost, .product-shell .button.ghost) {
+  border-color: #d7c9be;
+  background: #fffaf6;
+  color: var(--ui-ink);
+}
+:is(.urban-button--secondary, .urban-link-button--secondary, .menu-shell .button.ghost, .commerce-shell .button.ghost, .product-shell .button.ghost):hover:not(:disabled) {
+  border-color: var(--ui-accent);
+  background: #fff2e8;
+  color: var(--ui-ink);
+  transform: translateY(-2px);
+}
+:is(.urban-button, .urban-link-button, :is(.menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .cart-drawer) :is(.button.primary, .button.ghost)) svg { flex: none; transition: transform .2s ease; }
+:is(.urban-button, .urban-link-button, :is(.menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .cart-drawer) :is(.button.primary, .button.ghost)):hover svg { transform: translateX(3px); }
+:is(.urban-button, .urban-link-button, :is(.menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .cart-drawer) :is(.button.primary, .button.ghost)):active { transform: translateY(0) scale(.98); }
+:is(.urban-button, .urban-link-button, :is(.menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .cart-drawer) :is(.button.primary, .button.ghost)):disabled { box-shadow: none; transform: none; }
+
+.urban-header .urban-nav > a { border-radius: 999px; font-weight: 680; transition: background .18s ease, color .18s ease; }
+.urban-header .urban-nav > a:hover:not(.active) { background: #f3e7dc; border-color: transparent; color: var(--ui-ink); }
+[data-winter="on"] .urban-header .urban-nav > a:hover:not(.active) { background: #e0edf4; }
+.urban-header :is(.urban-icon-button, .urban-cart-button, .winter-toggle) { box-shadow: 0 2px 10px rgba(38, 25, 18, .05); }
+.urban-header :is(.urban-icon-button, .urban-cart-button, .winter-toggle):hover { border-color: var(--ui-accent); box-shadow: var(--ui-elevation); transform: translateY(-2px); }
+
+:is(.urban-home .urban-heading > a, .urban-home .urban-story a:not(.urban-link-button), .menu-shell .product-details-link) {
+  color: #9b3211;
+  font-weight: 700;
+  text-decoration-thickness: 1px;
+  text-underline-offset: .3em;
+  transition: color .18s ease, text-underline-offset .18s ease;
+}
+:is(.urban-home .urban-heading > a, .urban-home .urban-story a:not(.urban-link-button), .menu-shell .product-details-link):hover {
+  color: #6f230d;
+  text-underline-offset: .45em;
+}
+[data-winter="on"] :is(.urban-home .urban-heading > a, .menu-shell .product-details-link) { color: #8f371c; }
+
+:is(.menu-shell, .commerce-shell, .product-shell, .delivery-page, .about-page, .contacts-page) :is(input:not([type="checkbox"]), select, textarea) {
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.4;
+  border-radius: 14px;
+}
+:is(.urban-home, .menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .urban-header) :is(a, button, input, select, textarea):focus-visible {
+  outline: 3px solid var(--ui-ring);
+  outline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  :is(.urban-home, .menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page) { line-height: 1.6; }
+  :is(.urban-home, .menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page) :is(h1, h2) { letter-spacing: -.035em; line-height: 1.1; }
+  .urban-home .urban-hero h1 { letter-spacing: -.055em; line-height: .98; }
+  :is(.urban-button, .urban-link-button, :is(.menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .cart-drawer) :is(.button.primary, .button.ghost)) { min-height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.urban-button, .urban-link-button, .urban-header a, .urban-header button, :is(.menu-shell, .commerce-shell, .product-shell, .production-standalone, .delivery-page, .about-page, .contacts-page, .cart-drawer) :is(.button.primary, .button.ghost)) { transition: none; }
+}
