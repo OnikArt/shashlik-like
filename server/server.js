@@ -3187,7 +3187,7 @@ async function staticFile(req, res, url) {
   const requested = decodeURIComponent(url.pathname);
   if (requested === "/sitemap.xml") {
     const origin = publicSiteOrigin || `http://${req.headers.host || `localhost:${port}`}`;
-    const pages = ["/", "/menu", "/delivery", "/pickup", "/about", "/contacts"];
+    const pages = ["/", "/menu", "/delivery", "/about", "/contacts"];
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((page) => `  <url><loc>${origin}${page}</loc></url>`).join("\n")}\n</urlset>`;
     res.writeHead(200, { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" });
     res.end(xml);

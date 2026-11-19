@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import {
   Link,
   NavLink,
+  Navigate,
   Route,
   Routes,
   useLocation,
@@ -916,7 +917,6 @@ function App() {
     location.pathname.startsWith("/product/") ||
     location.pathname === "/menu" ||
     location.pathname === "/delivery" ||
-    location.pathname === "/pickup" ||
     location.pathname === "/promotions" ||
     location.pathname === "/favorites" ||
     location.pathname === "/about" ||
@@ -1100,18 +1100,7 @@ function App() {
               />
             }
           />
-          <Route
-            path="/pickup"
-            element={
-              <PickupPage
-                data={data}
-                cartCount={cart.count}
-                cartTotal={cart.subtotal}
-                onCartOpen={() => setDrawerOpen(true)}
-                activeOrder={activeOrder}
-              />
-            }
-          />
+          <Route path="/pickup" element={<Navigate to="/delivery#kiosks" replace />} />
           <Route
             path="/promotions"
             element={
@@ -1279,10 +1268,6 @@ function useRouteMetadata(pathname: string, data: Bootstrap | null) {
       "/delivery": [
         "Доставка шашлыка по Воронежу | Шашлык Лайк",
         "Условия и стоимость доставки горячих блюд Шашлык Лайк по правому берегу Воронежа.",
-      ],
-      "/pickup": [
-        "Самовывоз | Шашлык Лайк",
-        "Точки и условия самовывоза заказов Шашлык Лайк.",
       ],
       "/promotions": [
         "Акции | Шашлык Лайк",
@@ -1550,7 +1535,6 @@ function Header({
   const links = [
     ["Меню", "/menu"],
     ["Доставка", "/delivery"],
-    ["Самовывоз", "/pickup"],
     ["О нас", "/about"],
     ["Контакты", "/contacts"],
   ];
@@ -1664,7 +1648,6 @@ function Footer({ settings }: { settings: Settings }) {
       <div className="footer-links">
         <Link to="/menu">Меню</Link>
         <Link to="/delivery">Доставка</Link>
-        <Link to="/pickup">Самовывоз</Link>
         <Link to="/contacts">Контакты</Link>
       </div>
       <div>
@@ -2104,7 +2087,6 @@ function HomeHeader({
     ["Меню", "/menu"],
     ["Акции", "/promotions"],
     ["Доставка", "/delivery"],
-    ["Киоски", "/pickup"],
     ["О нас", "/about"],
     ["Контакты", "/contacts"],
   ];
@@ -2420,8 +2402,8 @@ function DeliveryShowcase({ data }: { data: Bootstrap }) {
                 {data.pickupPoints.filter((point) => point.isActive).length}{" "}
                 точки доступны для выбора
               </small>
-              <Link to="/pickup">
-                Выбрать киоск <ArrowRight />
+              <Link to="/delivery#kiosks">
+                Подробнее о самовывозе <ArrowRight />
               </Link>
             </div>
           </article>
@@ -2431,13 +2413,7 @@ function DeliveryShowcase({ data }: { data: Bootstrap }) {
   );
 }
 
-function KioskShowcase({
-  data,
-  standalone = false,
-}: {
-  data: Bootstrap;
-  standalone?: boolean;
-}) {
+function KioskShowcase({ data }: { data: Bootstrap }) {
   const points = data.pickupPoints
     .filter((point) => point.isActive)
     .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
@@ -2451,7 +2427,6 @@ function KioskShowcase({
   }, [active, points.length]);
   const select = (index: number) =>
     setActive(Math.max(0, Math.min(index, points.length - 1)));
-  const Heading = standalone ? "h1" : "h2";
   useEffect(() => {
     if (!details) return;
     const previousOverflow = document.body.style.overflow;
@@ -2476,32 +2451,22 @@ function KioskShowcase({
     };
   }, [details]);
   return (
-    <section
-      className={`production-section kiosk-showcase${standalone ? " standalone" : ""}`}
-      aria-labelledby={
-        standalone ? "pickup-page-title" : "kiosk-showcase-title"
-      }
-    >
+    <section className="production-section kiosk-showcase" aria-labelledby="kiosk-showcase-title">
       <div className="home-container">
         <div className="production-heading with-action">
           <div>
             <p>● &nbsp; НАШИ КИОСКИ</p>
-            <Heading
-              id={standalone ? "pickup-page-title" : "kiosk-showcase-title"}
-            >
+            <h2 id="kiosk-showcase-title">
               Наши <strong>киоски</strong>
-            </Heading>
+            </h2>
             <span>
               Всегда рядом — выбирайте удобную точку и забирайте заказ без
               ожидания.
             </span>
           </div>
-          {!standalone && (
-            <Link className="production-outline-cta" to="/pickup">
-              Все киоски <ArrowRight />
-            </Link>
-          )}
-          {standalone && <Link className="urban-link-button urban-link-button--secondary kiosk-menu-link" to="/menu">Смотреть меню <ArrowRight size={18} aria-hidden="true" /></Link>}
+          <Link className="production-outline-cta" to="/delivery#kiosks">
+            Все киоски <ArrowRight />
+          </Link>
         </div>
         {points.length ? (
           <>
@@ -2685,31 +2650,6 @@ function PromotionsPage({
   );
 }
 
-function PickupPage({
-  data,
-  cartCount,
-  cartTotal,
-  onCartOpen,
-  activeOrder,
-}: ProductionPageProps) {
-  return (
-    <div className="home-shell production-standalone">
-      <HomeHeader
-        settings={data.settings}
-        cartCount={cartCount}
-        cartTotal={cartTotal}
-        onCartOpen={onCartOpen}
-        activePath="/pickup"
-        activeOrder={activeOrder}
-      />
-      <main>
-        <KioskShowcase data={data} standalone />
-      </main>
-      <HomeFooter settings={data.settings} />
-    </div>
-  );
-}
-
 function FavoritesPage({
   data,
   onAdd,
@@ -2798,7 +2738,6 @@ function HomeFooter({ settings }: { settings: Settings }) {
           <Link to="/menu">Меню</Link>
           <Link to="/promotions">Акции</Link>
           <Link to="/delivery">Доставка</Link>
-          <Link to="/pickup">Киоски</Link>
           <Link to="/favorites">Избранное</Link>
           <Link to="/about">О нас</Link>
           <Link to="/contacts">Контакты</Link>
@@ -3950,7 +3889,7 @@ function CartPage({ data, cart, onCartOpen, activeOrder }: CommercePageProps) {
               <span>Продолжить покупки</span>
             </Link>
             <p>{cart.detailed.length ? "Ваш заказ" : "Корзина"}</p>
-            <h1>{cart.detailed.length ? "Почти готово" : "Пока пусто"}</h1>
+            <h1>{cart.detailed.length ? "Почти готово" : "Вкус начинается здесь"}</h1>
             <span>
               {cart.detailed.length
                 ? "Проверьте состав заказа — количество и дополнения можно изменить перед оформлением."
@@ -4004,8 +3943,8 @@ function CartContent({
     return (
       <div className={`empty-cart${compact ? " compact" : ""}`}>
         <img className="empty-cart-visual" src="/assets/basket-3d.png" alt="" aria-hidden="true" />
-        {compact ? <h2>Пока пусто</h2> : <h1>Корзина пока пуста</h1>}
-        <p>{compact ? "Выберите блюда — мы сохраним их здесь." : "Добавьте любимые блюда из меню, и они появятся здесь."}</p>
+        {compact ? <h2>Пока пусто</h2> : <h2>Выберите блюдо по вкусу</h2>}
+        <p>{compact ? "Выберите блюда — мы сохраним их здесь." : "Шашлык, шаурма и другие блюда уже ждут вас в меню."}</p>
         <Link className="button primary" to="/menu" onClick={onCheckout}>
           Смотреть меню <ArrowRight aria-hidden="true" />
         </Link>
@@ -5895,16 +5834,6 @@ function Contacts({
       />
       <main>
         <section className="contacts-hero" aria-labelledby="contacts-title">
-          <div className="contacts-hero-media" aria-hidden="true">
-            <img
-              src="/assets/home-kiosk-evening.webp"
-              alt=""
-              width="1792"
-              height="1024"
-              fetchPriority="high"
-              decoding="async"
-            />
-          </div>
           <div className="contacts-hero-inner home-container">
             <div className="contacts-intro">
               <p className="contacts-eyebrow">Контакты</p>

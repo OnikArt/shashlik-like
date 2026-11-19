@@ -23,6 +23,7 @@ import "./checkout-polish.css";
 import "./mobile-home-hero.css";
 import "./seasonal-layout-fixes.css";
 import "./editorial-finish.css";
+import "./public-layout-redesign.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
